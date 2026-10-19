@@ -406,7 +406,7 @@ function buildSteps() {
 const curStep = () => W.steps[W.i];
 
 // 사진 줄이기 — 캡처 글씨가 읽히도록 긴 변 2000px, 프로필 사진은 1280px
-async function compress(file, max) {
+async function compress(file, max, quality = 0.85) {
   let bmp;
   try {
     bmp = await createImageBitmap(file);
@@ -418,7 +418,7 @@ async function compress(file, max) {
   c.width = Math.round(bmp.width * s);
   c.height = Math.round(bmp.height * s);
   c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', 0.86);
+  return c.toDataURL('image/jpeg', quality);
 }
 
 function openWizard() {
@@ -454,6 +454,7 @@ function resetWizard() {
   W.i = 0;
   W.consent = [false, false];
   W.id = null;
+  W.token = null;
   W.preview = null;
   W.plan = 'full';
   W.opened = false;
@@ -643,7 +644,7 @@ const STEPS = {
       err.textContent = '';
       for (const f of files) {
         if (v.chatImages.length >= 6) { err.textContent = '캡처는 6장까지 올릴 수 있습니다.'; break; }
-        try { v.chatImages.push(await compress(f, 2000)); } catch (e) { err.textContent = e.message; }
+        try { v.chatImages.push(await compress(f, 1600, 0.82)); } catch (e) { err.textContent = e.message; }
       }
       paint();
       W.refresh();
@@ -671,7 +672,7 @@ const STEPS = {
     const add = async (files) => {
       err.textContent = '';
       if (!files[0]) return;
-      try { v.photo = await compress(files[0], 1280); } catch (e) { err.textContent = e.message; }
+      try { v.photo = await compress(files[0], 1024); } catch (e) { err.textContent = e.message; }
       paint();
       W.refresh();
     };
@@ -884,13 +885,13 @@ const STEPS = {
           const btn = $('#wz-next');
           btn.disabled = true;
           try {
-            const r = await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: W.id, plan: W.plan }) });
+            const r = await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: W.token, plan: W.plan }) });
             const j = await r.json();
             if (!r.ok) throw new Error(j.error);
-            const id = W.id;
+            keepReport(j);
             resetWizard();
             closeWizard();
-            navigate(`/report/${id}`);
+            navigate(`/report/${j.id}`);
           } catch (e) {
             err.textContent = e.message || '결제 처리 중 문제가 생겼습니다.';
             btn.disabled = false;
@@ -914,8 +915,11 @@ async function runAnalysis(list, bar, err) {
     bar.style.width = `${Math.min(88, (k / rows.length) * 88)}%`;
   }, reduce ? 50 : 520);
   try {
-    const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ visitor, input: W.val() }) });
-    const j = await r.json();
+    const body = JSON.stringify({ visitor, input: W.val() });
+    // 서버 함수가 받는 요청 크기 한도(4.5MB) 안으로
+    if (body.length > 4_200_000) throw new Error('올린 사진이 너무 큽니다. 캡처 수를 줄여 주세요.');
+    const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    const j = await r.json().catch(() => ({ error: '검증 중에 문제가 생겼습니다. 잠시 뒤 다시 시도해 주세요.' }));
     if (!r.ok) throw new Error(j.error || '검증 중에 문제가 생겼습니다.');
     const wait = Math.max(0, 2600 - (performance.now() - t0));
     await sleep(wait);
@@ -930,6 +934,7 @@ async function runAnalysis(list, bar, err) {
     }
     bar.style.width = '100%';
     W.id = j.id;
+    W.token = j.token;
     W.preview = j.preview;
     await sleep(450);
     go(W.steps.indexOf('preview'), 1);
@@ -1022,9 +1027,35 @@ function itemCard(it, id) {
   return card;
 }
 
+// ---------- 리포트 보관: 서버가 아니라 이 기기에, 암호화된 봉투로 24시간 ----------
+const RKEY = 'dc-r-';
+const reportCache = new Map();
+function keepReport(j) {
+  try { localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt })); } catch { /* 저장 못 해도 이번 화면에서는 연다 */ }
+  if (j.report) reportCache.set(j.id, j.report);
+}
+function storedReport(id) {
+  try {
+    const s = JSON.parse(localStorage.getItem(RKEY + id) || 'null');
+    if (s && s.exp > Date.now()) return s;
+    localStorage.removeItem(RKEY + id);
+  } catch { /* 없음 */ }
+  return null;
+}
+function purgeReports() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(RKEY)) storedReport(k.slice(RKEY.length));
+    }
+  } catch { /* 없음 */ }
+}
+
 async function upgrade(id) {
-  const r = await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, plan: 'full' }) });
-  if (r.ok) { toast('Full Check로 열었습니다'); showReport(id); } else toast('리포트 보관 시간이 지났습니다');
+  const s = storedReport(id);
+  const r = s ? await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, plan: 'full' }) }) : null;
+  const j = r ? await r.json().catch(() => ({})) : {};
+  if (r?.ok) { keepReport(j); toast('Full Check로 열었습니다'); showReport(id); } else toast(j.error || '리포트 보관 시간이 지났습니다');
 }
 
 let countdownTimer = null;
@@ -1032,22 +1063,32 @@ async function showReport(id) {
   const view = $('#report-view');
   view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' }, h('p', {}, '리포트를 여는 중입니다'))));
   scrollTo({ top: 0 });
-  let r;
-  let j;
-  try {
-    r = await fetch(`/api/report/${id}`);
-    j = await r.json();
-  } catch {
-    j = { error: '리포트를 불러오지 못했습니다.' };
+  let j = reportCache.get(id);
+  let error = null;
+  if (!j) {
+    const s = storedReport(id);
+    if (!s) {
+      error = '리포트는 서버에 저장하지 않고 검증한 기기에만 24시간 보관합니다. 다른 기기이거나 보관 시간이 지났다면 새로 검증해 주세요.';
+    } else {
+      try {
+        const r = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token }) });
+        j = await r.json();
+        if (!r.ok) {
+          error = j.error || '리포트를 불러오지 못했습니다.';
+          if (r.status === 404 || r.status === 410) localStorage.removeItem(RKEY + id);
+          j = null;
+        } else reportCache.set(id, j);
+      } catch {
+        error = '리포트를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.';
+      }
+    }
   }
-  if (!r || !r.ok) {
-    const unpaid = r?.status === 402;
+  if (!j) {
     view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' },
-      h('h1', {}, unpaid ? '결제 후 볼 수 있는 리포트입니다' : '리포트를 찾을 수 없습니다'),
-      h('p', { class: 'w' }, unpaid ? '시험판이라 테스트 결제로 바로 열 수 있습니다.' : j.error || '보관 시간이 지나 자동으로 삭제되었습니다.'),
-      unpaid
-        ? h('div', { class: 'rp-actions', style: 'justify-content:center' }, ['standard', 'full'].map((p) => h('button', { class: `btn ${p === 'full' ? 'btn-rose' : 'btn-line'}`, type: 'button', onclick: async () => { await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, plan: p }) }); showReport(id); } }, `${planLabel(p)} 테스트 결제`)))
-        : h('button', { class: 'btn btn-rose', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새로 검증하기'))));
+      h('h1', {}, '리포트를 열 수 없습니다'),
+      h('p', { class: 'w' }, error),
+      h('button', { class: 'btn btn-rose', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새로 검증하기'))));
+    glueText(view);
     wrapText(view);
     return;
   }
@@ -1158,7 +1199,7 @@ function openPrivacy() {
   sheet(h('h2', {}, '개인정보 처리 안내'),
     ...[
       '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 저장하지 않고 파기합니다.',
-      '결과 리포트는 결제 전 1시간, 결제 후 24시간 동안만 보관하고 자동으로 삭제합니다.',
+      '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 검증한 기기에만 24시간 보관하고 자동으로 지웁니다.',
       'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
       '성범죄자 공개정보와 범죄경력 정보는 저장하지 않습니다.',
       '관리자 화면에서도 원본 개인정보는 볼 수 없고, 관리자 접속은 기록으로 남습니다.',
@@ -1167,6 +1208,7 @@ function openPrivacy() {
 
 // =====================================================================
 async function boot() {
+  purgeReports();
   try {
     CONFIG = await (await fetch('/api/config')).json();
   } catch { /* 설정 없이도 첫 화면은 뜬다 */ }
