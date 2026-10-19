@@ -15,6 +15,14 @@ function h(tag, attrs = {}, ...kids) {
   }
   return el;
 }
+// 로고 표식 (public/logo-mark.svg 와 같은 모양)
+const MARK_SVG = '<svg viewBox="0 0 64 64" aria-hidden="true"><g fill="#E8506A" stroke="#E8506A" stroke-linejoin="round"><rect x="4" y="6" width="56" height="42" rx="14" stroke-width="0"/><path d="M15 42 L15.5 57 L31 45 Z" stroke-width="3"/></g><polyline points="19.5,27.5 28,35.5 44.5,18.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function logoMark() {
+  const s = document.createElement('span');
+  s.className = 'logo-mark';
+  s.innerHTML = MARK_SVG;
+  return s;
+}
 const root = $('#admin');
 const KEY = 'dc-admin-key';
 const won = (n) => (n == null ? '—' : `${Math.round(n).toLocaleString('ko-KR')}원`);
@@ -30,7 +38,7 @@ function login(msg) {
   const go = () => { sessionStorage.setItem(KEY, inp.value.trim()); load(); };
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   root.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' },
-    h('span', { class: 'logo' }, h('span', { class: 'logo-a' }, 'DATE'), h('span', { class: 'logo-b' }, 'CHECK')),
+    h('span', { class: 'logo' }, logoMark(), h('span', { class: 'logo-a' }, 'DATE'), h('span', { class: 'logo-b' }, 'CHECK')),
     h('h2', { style: 'margin-bottom:6px' }, '관리자'),
     h('p', { class: 'desc' }, '서버 .env.local 의 ADMIN_KEY 를 넣어 주세요.'),
     h('div', { class: 'fld' }, inp), err,
@@ -77,7 +85,7 @@ function render(s, key) {
 
   root.replaceChildren(
     h('header', { class: 'ad-top' }, h('div', { class: 'wrap' },
-      h('a', { class: 'logo', href: '/' }, h('span', { class: 'logo-a' }, 'DATE'), h('span', { class: 'logo-b' }, 'CHECK')),
+      h('a', { class: 'logo', href: '/' }, logoMark(), h('span', { class: 'logo-a' }, 'DATE'), h('span', { class: 'logo-b' }, 'CHECK')),
       h('small', {}, `관리자 · ${time(s.generatedAt)} 기준`),
       h('span', { class: 'sp' }),
       h('button', { class: 'btn btn-glass', type: 'button', onclick: load }, '새로고침'),

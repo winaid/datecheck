@@ -25,6 +25,15 @@ function h(tag, attrs = {}, ...kids) {
 const safeUrl = (u) => (/^https?:\/\//i.test(String(u || '')) ? u : null);
 const ext = (url, text, cls) => (safeUrl(url) ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', class: cls }, text) : h('span', { class: cls }, text));
 const pad2 = (n) => String(n).padStart(2, '0');
+// 로고 표식 (public/logo-mark.svg 와 같은 모양)
+const MARK_SVG = '<svg viewBox="0 0 64 64" aria-hidden="true"><g fill="#E8506A" stroke="#E8506A" stroke-linejoin="round"><rect x="4" y="6" width="56" height="42" rx="14" stroke-width="0"/><path d="M15 42 L15.5 57 L31 45 Z" stroke-width="3"/></g><polyline points="19.5,27.5 28,35.5 44.5,18.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function logoMark() {
+  const s = document.createElement('span');
+  s.className = 'logo-mark';
+  s.innerHTML = MARK_SVG;
+  return s;
+}
+
 // 줄바꿈 런타임을 거치지 않는 짧은 글: 가운뎃점·빗금·숫자 하이픈에서 꺾이지 않게 묶는다
 const WJ = String.fromCharCode(0x2060);
 const glue = (s) => String(s || '').replace(/([^\s⁠])([·ㆍ/])(?=[^\s⁠])/g, '$1' + WJ + '$2' + WJ).replace(/(\d)-(?=\d)/g, '$1' + WJ + '-' + WJ);
@@ -466,7 +475,7 @@ function buildShell() {
     h('div', { class: 'wz-backdrop', onclick: closeWizard }),
     h('div', { class: 'wz-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'wz-title' },
       h('aside', { class: 'wz-side' },
-        h('span', { class: 'logo' }, h('span', { class: 'logo-a' }, 'DATE'), h('span', { class: 'logo-b' }, 'CHECK')),
+        h('span', { class: 'logo' }, logoMark(), h('span', { class: 'logo-a' }, 'DATE'), h('span', { class: 'logo-b' }, 'CHECK')),
         h('ol', { class: 'wz-track', id: 'wz-track' }),
         h('div', { class: 'wz-meter' },
           h('p', {}, '13개 항목 중'),
@@ -1217,5 +1226,10 @@ async function boot() {
   route();
   glueText();
   wrapText();
+  // 가이드 페이지의 '검증 시작' 단추로 들어오면 팝업을 바로 연다
+  if (new URLSearchParams(location.search).get('start') === '1') {
+    history.replaceState({}, '', '/');
+    openWizard();
+  }
 }
 boot();

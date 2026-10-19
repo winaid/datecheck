@@ -69,3 +69,16 @@ Node 20 이상, 외부 패키지 없음. 키는 `.env.local`.
 - Vercel 프로젝트 설정 → Environment Variables 에 넣을 것: `GEMINI_API_KEY`, `GEMINI_MODEL`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `ADMIN_KEY`, `REPORT_SECRET`(긴 임의 문자열). 넣지 않으면 AI·공개 글 검색은 '연동 전'으로 나오고 규칙 분석만 돈다.
 - 요청 크기 한도 4.5MB — 화면이 캡처를 긴 변 1600px 로 줄이고, 넘으면 미리 막는다.
 - 집계·문의·관리자 로그는 Vercel 에서 임시 폴더(/tmp)에 쌓여 함수가 다시 시작되면 사라진다. 정식 운영 전에 Upstash Redis 같은 저장소 연결이 필요하다(관리자 화면에 표시됨).
+
+## 로고·파비콘·캐러셀(검색 노출)
+
+- 로고 표식 `public/logo-mark.svg`(말풍선 + 체크). 머리글·팝업·관리자·바닥글에 같은 모양.
+- 파비콘 `favicon.ico`(16·32·48)·`favicon.svg`, 애플·안드로이드 아이콘, `site.webmanifest`, 검색엔진 로고 `img/logo-512.png`(Organization.logo), 공유 이미지 `og.jpg`(1200×630).
+- 캐러셀: 가이드 7쪽(`/guide/*`, 정적 HTML) — 쪽마다 머리말에 ItemList 하나·다른 가이드 6개(이름·주소·사진), 화면 카드는 본문 끝에 같은 순서·같은 사진. 카드 이름은 16자 이하·가운뎃점·괄호 없음(`content/guides.mjs` assertCardRules, `tests/seo.test.mjs`).
+- 홈은 canonical `https://…/`(끝 /). 홈 첫 화면에는 카드 줄을 두지 않았다 — 홈 결과 카드까지 노리려면 첫 화면 400px 안에 카드 6장이 필요하다(플레이북).
+- 다시 만들기:
+  - 글·카드 이름 바꿈 → `node scripts/build-guides.mjs` (가이드 쪽·sitemap·robots·홈 머리말·홈 가이드 칸)
+  - 아이콘·공유 이미지·카드 그림 → `SHARP_PATH=… PLAYWRIGHT_PATH=… node scripts/build-assets.mjs`
+  - 카드 배경 사진(GPT, 비용) → `SHARP_PATH=… node scripts/gen-card-bg.mjs [slug]` — 오너 승인 뒤에만
+- 도메인을 바꾸면 `SITE_URL=https://새주소 node scripts/build-guides.mjs` 로 다시 만든다.
+- 네이버 서치어드바이저 등록·사이트맵 제출·수집 요청은 사이트 주인이 해야 한다. 카드는 네이버가 읽고 색인한 뒤에 붙고, 보장되지 않는다.
