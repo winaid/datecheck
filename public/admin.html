@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>DATE CHECK 관리자</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="/app.css">
+  <style>
+    body { background: #f3f1ec; }
+    .ad-top { background: var(--navy-950); color: #fff; }
+    .ad-top .wrap { display: flex; align-items: center; gap: 16px; height: 64px; }
+    .ad-top .logo-b { color: #fff; }
+    .ad-top small { color: rgba(255,255,255,.55); font-size: 14px; }
+    .ad-top .sp { flex: 1; }
+    .ad-top .btn { padding: 8px 16px; font-size: 14px; }
+    .ad-main { padding: 32px 0 80px; }
+    .ad-note { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; font-size: 15px; color: var(--ink-2); margin-bottom: 24px; }
+    .ad-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+    .kpi span { font-size: 13.5px; color: var(--sub); }
+    .kpi b { display: block; font-size: 30px; font-weight: 900; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .kpi em { font-style: normal; font-size: 12.5px; color: var(--sub); }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; margin-bottom: 18px; }
+    .card h2 { font-size: 19px; font-weight: 850; margin-bottom: 4px; }
+    .card .desc { font-size: 14px; color: var(--sub); margin-bottom: 16px; }
+    .two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
+    .two > .card { margin-bottom: 0; }
+    .row-gap { margin-bottom: 18px; }
+    .chart { display: flex; align-items: flex-end; gap: 6px; height: 180px; padding-top: 10px; border-bottom: 1px solid var(--line); }
+    .chart .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; height: 100%; position: relative; }
+    .chart .bar { width: 100%; max-width: 26px; border-radius: 5px 5px 0 0; background: var(--navy-600); transform-origin: bottom; transform: scaleY(0); transition: transform .9s var(--ease); }
+    .chart .bar.paid { background: var(--rose); position: absolute; bottom: 0; max-width: 12px; }
+    .chart.in .bar { transform: scaleY(1); }
+    .chart .v { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
+    .days { display: flex; gap: 6px; margin-top: 6px; }
+    .days span { flex: 1; text-align: center; font-size: 12px; color: var(--sub); }
+    .legend { display: flex; gap: 16px; font-size: 13px; color: var(--sub); margin-top: 10px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+    .fn { display: grid; gap: 12px; }
+    .fn-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 120px; gap: 12px; align-items: center; font-size: 14.5px; }
+    .fn-track { height: 14px; background: #f0eee9; border-radius: 7px; overflow: hidden; }
+    .fn-track i { display: block; height: 100%; background: var(--navy-800); border-radius: 7px; width: 0; transition: width 1s var(--ease); }
+    .fn-row:last-child .fn-track i { background: var(--rose); }
+    .fn-row b { font-variant-numeric: tabular-nums; text-align: right; }
+    .fn-row b small { font-weight: 500; color: var(--sub); margin-left: 6px; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .metric { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+    .metric span { font-size: 13.5px; color: var(--sub); }
+    .metric b { display: block; font-size: 22px; font-weight: 850; font-variant-numeric: tabular-nums; }
+    .metric em { font-style: normal; font-size: 12px; color: var(--sub); }
+    table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+    th { text-align: left; font-size: 13px; color: var(--sub); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    td { padding: 10px; border-bottom: 1px solid #f1efea; vertical-align: top; text-wrap: pretty; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.msg { max-width: 420px; white-space: pre-wrap; }
+    .tag-t { font-size: 12.5px; font-weight: 800; padding: 2px 8px; border-radius: 6px; background: #eef2f8; color: var(--navy-600); white-space: nowrap; }
+    .tag-t.delete { background: var(--signal-bg); color: var(--signal); }
+    .purge { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .empty { color: var(--sub); font-size: 14.5px; padding: 10px 0; }
+    .login { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+    .login .card { width: min(420px, 100%); padding: 32px; }
+    .login .logo { margin-bottom: 18px; }
+    .login .logo-b { color: var(--ink); }
+    .scroll-x { overflow-x: auto; }
+    @media (max-width: 600px) { .ad-top small { display: none; } .ad-top .wrap { gap: 8px; } .kpi b { font-size: 24px; } .card { padding: 18px; } }
+    @media (max-width: 1000px) { .ad-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: 1fr; } .purge { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fn-row { grid-template-columns: 100px minmax(0, 1fr) 96px; } }
+  </style>
+</head>
+<body>
+  <div id="admin"></div>
+  <script src="/wrap.js"></script>
+  <script src="/admin.js" type="module"></script>
+</body>
+</html>

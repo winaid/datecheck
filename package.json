@@ -1,0 +1,15 @@
+{
+  "name": "date-check",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DATE CHECK — AI 데이트·사기 안전검증 서비스 MVP (기획서 DATE_CHECK_MVP_개발자전달용_최종.docx 기준)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "images": "node scripts/gen-images.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

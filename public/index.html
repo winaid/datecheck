@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DATE CHECK · 만나기 전, 확인하세요.</title>
+  <meta name="description" content="상대에게 받은 정보를 AI와 공식 데이터로 교차검증해 사칭·사진도용·금전요구·사기 관련 확인 신호를 찾아드립니다.">
+  <meta name="theme-color" content="#0B1424">
+  <link rel="preload" as="image" href="/img/hero.jpg">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+
+  <header class="nav" id="nav">
+    <div class="nav-in">
+      <a class="logo" href="/" data-home aria-label="DATE CHECK 처음으로"><span class="logo-a">DATE</span><span class="logo-b">CHECK</span></a>
+      <nav class="nav-links" aria-label="주요 메뉴">
+        <a href="/#checks">검증 항목</a>
+        <a href="/#process">진행 방식</a>
+        <a href="/#safety">안전 원칙</a>
+        <a href="/#pricing">요금</a>
+      </nav>
+      <button class="btn btn-rose btn-sm" type="button" data-open-wizard>검증 시작</button>
+      <button class="nav-burger" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mnav"><span></span><span></span><span></span></button>
+    </div>
+  </header>
+  <nav class="mnav" id="mnav" aria-label="모바일 메뉴">
+    <a href="/#checks">검증 항목</a>
+    <a href="/#process">진행 방식</a>
+    <a href="/#safety">안전 원칙</a>
+    <a href="/#pricing">요금</a>
+    <button class="btn btn-rose" type="button" data-open-wizard>무료 사전분석 시작</button>
+  </nav>
+
+  <main id="main">
+    <div id="landing">
+      <!-- 첫 화면 -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-bg" data-parallax="0.25"><img src="/img/hero.jpg" srcset="/img/hero-sm.jpg 768w, /img/hero.jpg 1536w" sizes="100vw" alt="" fetchpriority="high"></div>
+        <div class="hero-scrim"></div>
+        <div class="wrap hero-in">
+          <p class="eyebrow rise" style="--d:.05s">AI 데이트·사기 안전검증</p>
+          <h1 id="hero-title" class="hero-title">
+            <span class="line"><span class="rise" style="--d:.15s">만나기 전,</span></span>
+            <span class="line"><span class="rise" style="--d:.32s">확인하세요.</span></span>
+          </h1>
+          <!-- 기획서 13장 문구 그대로, 줄 나눔도 원문대로 -->
+          <p class="hero-lead rise" style="--d:.55s">
+            <span class="ln"><span class="nw">사진 한 장,</span> <span class="nw">연락처 하나,</span> <span class="nw">카톡 몇 장이면 됩니다.</span></span>
+            <span class="ln w">상대에게 받은 정보를 AI와 공식 데이터로 교차검증해 사칭·사진도용·금전요구·사기&nbsp;관련 확인 신호를 찾아드립니다.</span>
+          </p>
+          <div class="hero-cta rise" style="--d:.72s">
+            <button class="btn btn-rose btn-lg" type="button" data-open-wizard>무료 사전분석 시작</button>
+            <a class="btn btn-glass btn-lg" href="#checks">검증 항목 보기</a>
+          </div>
+          <ul class="hero-meta rise" style="--d:.9s">
+            <li><b data-count="13">13</b>개 검증 항목</li>
+            <li><b>공식 데이터</b> 교차검증</li>
+            <li><b>원본</b> 분석 후 자동 파기</li>
+          </ul>
+        </div>
+        <a class="scroll-cue" href="#demo" aria-label="아래로"><span></span></a>
+      </section>
+
+      <!-- 연동 데이터 흐름 띠 -->
+      <div class="marquee" aria-label="연동 데이터">
+        <div class="marquee-track">
+          <span>더치트 피해사례</span><span>경찰민원24</span><span>국세청 사업자등록정보</span><span>공정위 통신판매사업자</span><span>KISA WHOIS</span><span>금융위 기업기본정보</span><span>OpenDART</span><span>심평원 병원정보</span><span>성범죄자 알림e</span><span>KISA 보호나라</span>
+          <span aria-hidden="true">더치트 피해사례</span><span aria-hidden="true">경찰민원24</span><span aria-hidden="true">국세청 사업자등록정보</span><span aria-hidden="true">공정위 통신판매사업자</span><span aria-hidden="true">KISA WHOIS</span><span aria-hidden="true">금융위 기업기본정보</span><span aria-hidden="true">OpenDART</span><span aria-hidden="true">심평원 병원정보</span><span aria-hidden="true">성범죄자 알림e</span><span aria-hidden="true">KISA 보호나라</span>
+        </div>
+      </div>
+
+      <!-- 미리 보기: 대화에서 신호 찾기 -->
+      <section class="demo" id="demo" aria-labelledby="demo-title">
+        <div class="wrap demo-in">
+          <div class="demo-copy rv">
+            <p class="eyebrow dark">미리 보기</p>
+            <h2 id="demo-title">대화 몇 줄에서<br>이런 신호를 찾아냅니다</h2>
+            <p class="w lead-dark">사람을 점수로 매기지 않습니다. 확인이 필요한 말을 짚어 근거와 함께 보여 드립니다.</p>
+            <div class="demo-panel" aria-live="polite">
+              <div class="demo-count"><span>확인 신호</span><b id="demo-n">0</b><span>건</span></div>
+              <ol class="demo-list" id="demo-list"></ol>
+              <button class="link-btn" type="button" id="demo-replay">다시 보기</button>
+            </div>
+          </div>
+          <div class="phone rv" aria-hidden="true">
+            <div class="phone-top"><span class="phone-name">상대방</span><span class="phone-sub">대화 캡처 분석</span></div>
+            <div class="phone-body"><span class="phone-day">오늘</span><div class="phone-chat" id="demo-chat"></div></div>
+            <div class="phone-scan"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 13개 항목 -->
+      <section class="checks" id="checks" aria-labelledby="checks-title">
+        <div class="wrap">
+          <div class="sec-head rv">
+            <p class="eyebrow">검증 항목</p>
+            <h2 id="checks-title"><span data-count="13">13</span>개 항목을 교차검증합니다</h2>
+            <p class="w">가진 정보만 넣으면 됩니다. 넣은 정보에 따라 실행할 수 있는 검사가 자동으로 정해집니다.</p>
+          </div>
+          <div class="filters rv" role="tablist" aria-label="정보 종류로 보기">
+            <button type="button" role="tab" aria-selected="true" data-f="all">전체</button>
+            <button type="button" role="tab" aria-selected="false" data-f="contact">전화·계좌</button>
+            <button type="button" role="tab" aria-selected="false" data-f="chat">대화</button>
+            <button type="button" role="tab" aria-selected="false" data-f="photo">사진</button>
+            <button type="button" role="tab" aria-selected="false" data-f="link">링크·SNS</button>
+            <button type="button" role="tab" aria-selected="false" data-f="biz">회사·사업자·직업</button>
+          </div>
+          <div class="check-grid" id="check-grid"></div>
+        </div>
+      </section>
+
+      <!-- 진행 방식 -->
+      <section class="process" id="process" aria-labelledby="process-title">
+        <div class="wrap">
+          <div class="sec-head rv">
+            <p class="eyebrow">진행 방식</p>
+            <h2 id="process-title">네 단계면 끝납니다</h2>
+            <p class="w">입력은 한 화면에 하나씩 차례로 넣습니다. 결제 전에 무엇을 찾았는지 먼저 보여 드립니다.</p>
+          </div>
+          <ol class="steps" id="steps">
+            <li class="step">
+              <span class="step-no">01</span>
+              <h3>알고 있는 정보 선택</h3>
+              <p class="w">상대에게 받은 정보 가운데 아는 것만 고릅니다. 모두 넣을 필요는 없습니다.</p>
+              <div class="mock mock-chips"><i class="on">전화번호</i><i class="on">카톡</i><i>사진</i><i class="on">URL</i><i>계좌</i></div>
+            </li>
+            <li class="step">
+              <span class="step-no">02</span>
+              <h3>정보 입력과 업로드</h3>
+              <p class="w">캡처는 올리기만 하면 됩니다. 글자는 AI가 읽습니다.</p>
+              <div class="mock mock-upload"><i></i><i></i><i></i><span>캡처 3장</span></div>
+            </li>
+            <li class="step">
+              <span class="step-no">03</span>
+              <h3>무료 사전분석</h3>
+              <p class="w">결제 전에 검사할 수 있는 항목과 찾은 신호 수를 먼저 확인합니다.</p>
+              <div class="mock mock-stat"><span>총 13개 항목 중 <b>7개</b> 검사 가능</span><span>확인 신호 <b class="rose">4개</b> 발견</span></div>
+            </li>
+            <li class="step">
+              <span class="step-no">04</span>
+              <h3>DATE CHECK REPORT</h3>
+              <p class="w">Standard 또는 Full&nbsp;Check를 고르면 근거와 함께 리포트가 열립니다.</p>
+              <div class="mock mock-report"><i></i><i class="s"></i><i></i><i class="s short"></i></div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- 결과 화면 원칙 -->
+      <section class="principles" aria-labelledby="pr-title">
+        <div class="wrap">
+          <div class="sec-head rv">
+            <p class="eyebrow">결과 화면 원칙</p>
+            <h2 id="pr-title">사람이 아니라 신호를 보여 드립니다</h2>
+            <p class="w">사람 자체를 등급으로 나누지 않습니다. 데이터와 신호의 상태만 보여 드립니다.</p>
+          </div>
+          <div class="pr-table">
+            <div class="pr-row pr-head" aria-hidden="true"><span>이렇게 씁니다</span><span>이렇게 쓰지 않습니다</span></div>
+            <div class="pr-row rv"><span class="pr-use">확인 신호 4개 발견</span><span class="pr-ban"><s>위험도 92%</s></span></div>
+            <div class="pr-row rv"><span class="pr-use">추가 확인 권장</span><span class="pr-ban"><s>사기 가능성 HIGH</s></span></div>
+            <div class="pr-row rv"><span class="pr-use">피해등록 정보 확인</span><span class="pr-ban"><s>사기꾼입니다</s></span></div>
+            <div class="pr-row rv"><span class="pr-use">공개정보에서 일치하지 않음</span><span class="pr-ban"><s>거짓말입니다</s></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 안전 원칙 -->
+      <section class="safety" id="safety" aria-labelledby="safety-title">
+        <div class="safety-bg" data-parallax="0.18"><img src="/img/bench.jpg" srcset="/img/bench-sm.jpg 768w, /img/bench.jpg 1536w" sizes="100vw" alt="" loading="lazy"></div>
+        <div class="safety-scrim"></div>
+        <div class="wrap safety-in">
+          <div class="sec-head rv">
+            <p class="eyebrow">안전 원칙</p>
+            <h2 id="safety-title">하지 않는 일부터 정했습니다</h2>
+            <p class="w">“상대방 뒷조사”가 아니라 “상대방에게 받은 정보의 사실관계와 위험 신호를 검증하는 서비스”입니다.</p>
+          </div>
+          <div class="safe-grid">
+            <article class="safe rv">
+              <h3>범죄경력은 조회하지 않습니다</h3>
+              <p class="w">범죄경력과 수사경력은 법이 정한 경우에만 다룰 수 있는 민감정보입니다. 데이트 상대 조회로 제공하지 않습니다.</p>
+            </article>
+            <article class="safe rv">
+              <h3>성범죄자 정보는 공식 사이트로 연결합니다</h3>
+              <p class="w">성범죄자 알림e 정보를 저장하거나 다시 보여 주지 않습니다. 필요할 때 공식 조회 버튼만 드립니다.</p>
+            </article>
+            <article class="safe rv">
+              <h3>이름만으로 찾지 않습니다</h3>
+              <p class="w">이름은 교차검증을 돕는 보조 정보로만 씁니다. 이름과 연락처로 직장이나 재산을 알아내는 기능은 만들지 않습니다.</p>
+            </article>
+            <article class="safe rv">
+              <h3>원본은 분석 후 바로 지웁니다</h3>
+              <p class="w">전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 저장하지 않습니다. 리포트도 24시간 뒤 자동으로 삭제됩니다.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 요금 -->
+      <section class="pricing" id="pricing" aria-labelledby="pricing-title">
+        <div class="wrap">
+          <div class="sec-head rv">
+            <p class="eyebrow">요금</p>
+            <h2 id="pricing-title">구독 없이, 검증 한&nbsp;건만 결제합니다</h2>
+            <p class="w">무료 사전분석으로 찾은 신호 수를 먼저 보고 고르면 됩니다.</p>
+          </div>
+          <div class="plans">
+            <article class="plan rv">
+              <p class="plan-name">Standard</p>
+              <p class="plan-desc">공식 데이터 검증</p>
+              <p class="plan-price" data-price="standard">가격 미정</p>
+              <ul>
+                <li>전화번호·계좌번호 피해등록 확인</li>
+                <li>URL·도메인·SNS 검증</li>
+                <li>사업자 진위·상태와 통신판매 신고</li>
+                <li>회사·직업 공개정보</li>
+              </ul>
+              <button class="btn btn-line" type="button" data-open-wizard>무료 사전분석 시작</button>
+            </article>
+            <article class="plan plan-full rv">
+              <p class="plan-tag">추천</p>
+              <p class="plan-name">Full Check</p>
+              <p class="plan-desc">공식 데이터와 AI 분석</p>
+              <p class="plan-price" data-price="full">가격 미정</p>
+              <ul>
+                <li>Standard 항목 전부</li>
+                <li>카톡·DM AI 분석 네 갈래</li>
+                <li>진술 불일치 분석</li>
+                <li>사진 검증과 PDF 리포트</li>
+              </ul>
+              <button class="btn btn-rose" type="button" data-open-wizard>무료 사전분석 시작</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 마지막 안내 -->
+      <section class="final" aria-labelledby="final-title">
+        <div class="final-bg" data-zoom><img src="/img/cups.jpg" srcset="/img/cups-sm.jpg 768w, /img/cups.jpg 1536w" sizes="100vw" alt="" loading="lazy"></div>
+        <div class="final-scrim"></div>
+        <div class="wrap final-in rv">
+          <h2 id="final-title">만나기 전, 확인하세요.</h2>
+          <p class="w">결과를 보고 결제할지 정하면 됩니다.</p>
+          <button class="btn btn-rose btn-lg" type="button" data-open-wizard>무료 사전분석 시작</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 리포트 (/report/아이디) -->
+    <div id="report-view" hidden></div>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <div>
+        <a class="logo logo-sm" href="/" data-home><span class="logo-a">DATE</span><span class="logo-b">CHECK</span></a>
+        <p class="foot-note w">DATE&nbsp;CHECK는 상대방의 신원이나 안전을 보증하지 않으며, 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 분석합니다.</p>
+      </div>
+      <div class="foot-links">
+        <button type="button" class="link-btn" data-open-request>삭제 요청·문의·신고</button>
+        <button type="button" class="link-btn" data-open-privacy>개인정보 처리 안내</button>
+        <span class="foot-tag">시험판 · 실제 결제 없음</span>
+      </div>
+    </div>
+  </footer>
+
+  <div id="wizard" class="wz" hidden></div>
+  <div id="sheet" class="sheet" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/wrap.js"></script>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
