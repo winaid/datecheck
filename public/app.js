@@ -1,7 +1,8 @@
 // DATE CHECK 화면 — 첫 화면 연출, 팝업 단계 입력(STEP 1~6), 리포트(STEP 7~8)
 // 바깥에서 온 글(검색 결과·대화)은 반드시 textContent 로만 넣는다.
+import { parseSns, SNS_WHY, companyName } from '/parse-input.js';
 
-const $ = (s, r = document) => r.querySelector(s);
+const $ =(s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, reduce ? 0 : ms));
@@ -718,11 +719,23 @@ const STEPS = {
   },
 
   sns() {
+    // 주소·@아이디·'인스타 아이디' 어떻게 적어도 찾을 아이디를 바로 보여 준다 (public/parse-input.js)
+    const help = h('p', { class: 'fld-help', 'aria-live': 'polite' });
+    const el = input('sns', { placeholder: 'instagram.com/아이디 또는 @아이디', spellcheck: 'false' });
+    const paint = () => {
+      const r = parseSns(W.v.sns);
+      help.className = 'fld-help';
+      if (r.why === 'empty') help.textContent = '프로필 주소를 붙여 넣거나 아이디만 적어도 됩니다.';
+      else if (r.id) { help.textContent = `${r.siteName || 'SNS'} 아이디 ${r.id}, 이대로 찾습니다.`; help.classList.add('fld-ok'); }
+      else { help.textContent = SNS_WHY[r.why]; help.classList.add(r.why === 'site' ? 'fld-ok' : 'fld-bad'); }
+    };
+    el.addEventListener('input', paint);
+    paint();
     return {
       body: [...head('SNS 주소를 입력해 주세요', '인스타그램 주소나 아이디를 넣어 주세요.'),
-        field('SNS 주소 또는 아이디', input('sns', { placeholder: 'instagram.com/아이디 또는 @아이디', spellcheck: 'false' }))],
+        field('SNS 주소 또는 아이디', el, help)],
       skip: true,
-      next: { label: '다음', ok: () => W.v.sns.trim().length >= 2, go: next },
+      next: { label: '다음', ok: () => { const r = parseSns(W.v.sns); return Boolean(r.id) || r.why === 'site'; }, go: next },
     };
   },
 
@@ -740,9 +753,19 @@ const STEPS = {
         W.refresh();
       },
     }, j)));
+    // '(주)○○'·'○○ 다녀요'처럼 적어도 회사 이름만 떼어 찾는다 (public/parse-input.js)
+    const coHelp = h('p', { class: 'fld-help', 'aria-live': 'polite' });
+    const co = input('company', { placeholder: '주식회사 ○○' });
+    const paintCo = () => {
+      const raw = v.company.trim();
+      const n = companyName(raw);
+      coHelp.textContent = raw && n && n !== raw ? `"${n}" 이름으로 찾습니다.` : '주식회사·(주)는 붙여도 되고 빼도 됩니다.';
+    };
+    co.addEventListener('input', paintCo);
+    paintCo();
     return {
       body: [...head('회사와 직업을 알려 주세요', '상대가 다닌다고 한 회사나 직업을 넣어 주세요. 하나만 넣어도 됩니다.'),
-        field('회사명', input('company', { placeholder: '주식회사 ○○' })),
+        field('회사명', co, coHelp),
         h('div', { class: 'fld' }, h('span', { class: 'lbl' }, '직업'), chips), work],
       skip: true,
       next: { label: '다음', ok: () => Boolean(v.company.trim() || v.job), go: next },
