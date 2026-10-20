@@ -999,12 +999,94 @@ function quote(e) {
 function srcList(list) {
   return h('ul', { class: 'srcs' }, list.map((s) => h('li', {}, ext(s.url, s.title || s.url), h('span', {}, [s.where, s.date].filter(Boolean).join(' · ')))));
 }
-function linkRow(links) {
+// ---------- 직접 조회 안내: 경찰민원24·더치트는 자동 조회가 안 돼서, 어디에 검색하는지 화면 캡처로 보여 준다 ----------
+const KIND_WORD = { phone: '전화번호', account: '계좌번호' };
+const HOWTO = {
+  police: {
+    name: '경찰민원24',
+    btn: '경찰민원24 사기 이력조회',
+    sub: '공식 · 최근 3개월 신고와 비교',
+    title: '경찰민원24에서 사기 신고 이력 조회하기',
+    img: (k) => (k === 'account' ? '/img/howto/police-account.webp' : '/img/howto/police-phone.webp'),
+    size: [1400, 588],
+    imgM: (k) => (k === 'account' ? '/img/howto/police-account-m.webp' : '/img/howto/police-phone-m.webp'),
+    sizeM: [780, 874],
+    steps: (k) => (KIND_WORD[k]
+      ? [`${KIND_WORD[k]}를 복사합니다.`, `경찰민원24 첫 화면의 빨간 상자에서 '${KIND_WORD[k]}'를 고르고, 번호를 붙여 넣은 뒤 조회를 누릅니다.`]
+      : ['경찰민원24 첫 화면의 빨간 상자에서 전화번호, 계좌번호, 이메일 중 하나를 고릅니다.', '번호를 넣고 조회를 누릅니다.']),
+    note: '최근 3개월 동안 3회 이상 신고된 번호와 비교합니다. 나오지 않아도 안전하다는 뜻은 아닙니다.',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4 5.6v6.1c0 4.9 3.4 8.6 8 9.8 4.6-1.2 8-4.9 8-9.8V5.6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.6 12 2.4 2.4 4.4-4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  },
+  thecheat: {
+    name: '더치트',
+    btn: '더치트 피해사례 검색',
+    sub: '민간 · 피해자가 등록한 사례',
+    title: '더치트에서 피해 사례 검색하기',
+    img: () => '/img/howto/thecheat.webp',
+    size: [1690, 452],
+    imgM: () => '/img/howto/thecheat-m.webp',
+    sizeM: [1410, 174],
+    steps: (k) => [`${KIND_WORD[k] || '번호'}를 복사합니다.`, '더치트 검색 화면의 빨간 상자에 붙여 넣고 검색을 누릅니다.'],
+    note: '더치트는 피해자가 직접 등록한 사례를 모은 민간 서비스입니다.',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  },
+};
+// 예전에 만든 리포트(guide 표시 없음)도 주소로 알아본다
+const guideOf = (l) => l.guide || (/minwon24\.police\.go\.kr/.test(l.url) ? 'police' : /thecheat\.co\.kr/.test(l.url) ? 'thecheat' : null);
+const svgIcon = (markup) => { const s = h('span', { class: 'lk-ic' }); s.innerHTML = markup; return s; };
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('복사했습니다'); return true; } catch { return false; }
+}
+
+function openHowto(l, kind) {
+  const g = HOWTO[guideOf(l)];
+  track(`howto_${guideOf(l)}`);
+  const copyBtn = l.copy ? h('button', { class: 'btn btn-line howto-copy', type: 'button', onclick: async (e) => { if (!(await copyText(l.copy))) e.currentTarget.textContent = l.copy; } }, `${l.copy} 복사`) : null;
+  sheet(
+    h('span', { class: 'howto-k' }, '직접 조회'),
+    h('h2', {}, g.title),
+    h('ol', { class: 'howto-steps' }, g.steps(kind).map((s) => h('li', {}, h('span', { class: 'w' }, s)))),
+    copyBtn,
+    h('figure', { class: 'howto-shot' },
+      // 폰에서는 그 사이트의 모바일 화면(더치트는 검색 칸만 크게) 캡처
+      h('picture', {},
+        h('source', { media: '(max-width: 600px)', srcset: g.imgM(kind), width: g.sizeM[0], height: g.sizeM[1] }),
+        h('img', { src: g.img(kind), alt: `${g.name} 화면. 빨간 상자가 번호를 넣고 검색하는 곳입니다.`, width: g.size[0], height: g.size[1] })),
+      h('figcaption', { class: 'w' }, g.note)),
+    h('a', {
+      class: 'btn btn-navy howto-go', href: l.url, target: '_blank', rel: 'noopener noreferrer',
+      onclick: () => { track(`howto_open_${guideOf(l)}`); if (l.copy) navigator.clipboard?.writeText(l.copy).catch(() => {}); },
+    }, l.copy ? `번호 복사하고 ${g.name} 열기` : `${g.name} 열기`, h('span', { 'aria-hidden': 'true' }, '↗')),
+    h('p', { class: 'howto-url' }, new URL(l.url).host));
+}
+
+function lookupPanel(guides, kind) {
+  const copy = guides.find((l) => l.copy)?.copy;
+  return h('div', { class: 'lookup' },
+    h('div', { class: 'lookup-h' }, h('b', {}, '직접 조회해 보세요'), h('span', { class: 'w' }, '경찰과 더치트의 피해 이력은 자동으로 조회할 수 없습니다. 버튼을 누르면 어디에 검색하는지 화면으로 보여 드립니다.')),
+    h('div', { class: 'lookup-btns' },
+      guides.map((l) => {
+        const key = guideOf(l);
+        const g = HOWTO[key];
+        return h('button', { type: 'button', class: `lk lk-${key}`, onclick: () => openHowto({ ...l, copy: l.copy || copy }, kind) },
+          svgIcon(g.icon), h('span', { class: 'lk-t' }, h('b', {}, g.btn), h('small', {}, g.sub)), h('span', { class: 'lk-go', 'aria-hidden': 'true' }, '→'));
+      }),
+      copy ? h('button', { type: 'button', class: 'lk-copy', onclick: async (e) => { if (!(await copyText(copy))) e.currentTarget.textContent = copy; } }, `${copy} 복사`) : null));
+}
+
+function linkRow(links, itemId) {
   if (!links?.length) return null;
-  return h('div', { class: 'it-links' }, links.map((l) => [
-    ext(l.url, l.short || l.label),
-    l.copy ? h('button', { type: 'button', onclick: async (e) => { try { await navigator.clipboard.writeText(l.copy); toast('복사했습니다'); } catch { e.target.textContent = l.copy; } } }, `${l.copy} 복사`) : null,
-  ]));
+  const guides = links.filter((l) => HOWTO[guideOf(l)]);
+  const rest = links.filter((l) => !HOWTO[guideOf(l)]);
+  const kind = guides.find((l) => l.kind)?.kind || (itemId === 'account' ? 'account' : itemId === 'phone' ? 'phone' : null);
+  return [
+    guides.length ? lookupPanel(guides, kind) : null,
+    rest.length ? h('div', { class: 'it-links' }, rest.map((l) => [
+      ext(l.url, l.short || l.label),
+      l.copy ? h('button', { type: 'button', onclick: async (e) => { if (!(await copyText(l.copy))) e.target.textContent = l.copy; } }, `${l.copy} 복사`) : null,
+    ])) : null,
+  ];
 }
 
 function itemCard(it, id) {
@@ -1014,7 +1096,7 @@ function itemCard(it, id) {
       h('span', { class: 'it-no' }, pad2(it.no)),
       h('h3', {}, glue(it.title)),
       h('span', { class: `chip-st ${cls}` }, txt)),
-    h('div', { class: 'tags' }, (it.sources || []).map((s) => h('span', {}, s)), it.plan === 'full' ? h('span', {}, 'Full Check') : null));
+    h('div', { class: 'tags' }, (it.sources || []).filter((s) => s !== '더치트 API').map((s) => h('span', {}, s)), ['phone', 'account'].includes(it.id) && (it.sources || []).includes('더치트 API') ? h('span', {}, '경찰민원24·더치트 직접 조회') : null, it.plan === 'full' ? h('span', {}, 'Full Check') : null));
   if (it.locked) {
     card.append(h('div', { class: 'lock-cover' },
       h('p', { class: 'w' }, it.signalCount ? `이 항목에서 확인 신호 ${it.signalCount}건이 나왔습니다. 근거 문장은 Full Check에서 볼 수 있습니다.` : '이 항목의 근거와 상세 내용은 Full Check에서 볼 수 있습니다.'),
@@ -1027,12 +1109,13 @@ function itemCard(it, id) {
       h('p', { class: 'w' }, s.text),
       (s.evidence || []).map(quote),
       s.sources?.length ? srcList(s.sources) : null,
-      linkRow(s.links)));
+      linkRow(s.links, it.id)));
   }
   if (it.facts?.length) card.append(h('ul', { class: 'facts' }, it.facts.map((f) => h('li', {}, h('span', { class: 'w' }, f.text), f.sources?.length ? srcList(f.sources) : null))));
-  if (it.pending?.length) card.append(h('div', { class: 'pend' }, it.pending.map((p) => h('div', {}, h('b', {}, glue(p.label)), glue(p.text)))));
-  const lr = linkRow(it.links);
-  if (lr) card.append(lr);
+  // 예전 리포트에 남은 '더치트 API 제휴 계약 뒤' 안내는 보이지 않게 한다(지금은 직접 조회 안내로 바뀜)
+  const pend = (it.pending || []).filter((p) => p.label !== '더치트 API');
+  if (pend.length) card.append(h('div', { class: 'pend' }, pend.map((p) => h('div', {}, h('b', {}, glue(p.label)), glue(p.text)))));
+  for (const el of linkRow(it.links, it.id) || []) if (el) card.append(el);
   return card;
 }
 
@@ -1150,7 +1233,9 @@ async function showReport(id) {
       na.length ? h('section', { class: 'rp-sec' }, h('h2', { class: 'rp-sec-t' }, '검사하지 않은 항목', h('small', {}, `${na.length}개`)),
         h('div', { class: 'na-list' }, na.map((i) => h('span', {}, `${pad2(i.no)} ${i.title}`)))) : null,
       h('section', { class: 'rp-sec' }, h('h2', { class: 'rp-sec-t' }, '공식 조회'),
-        h('div', { class: 'off' }, (j.official || []).map((o) => h('a', { href: o.url, target: '_blank', rel: 'noopener noreferrer', onclick: () => track('official_click') }, h('b', {}, o.label), h('span', { class: 'w' }, o.text))))),
+        h('div', { class: 'off' }, (j.official || []).map((o) => (HOWTO[guideOf(o)]
+          ? h('a', { href: o.url, class: 'off-guide', onclick: (e) => { e.preventDefault(); track('official_click'); openHowto(o, null); } }, h('b', {}, o.label), h('span', { class: 'w' }, o.text), h('em', {}, '어디에 검색하는지 보기'))
+          : h('a', { href: o.url, target: '_blank', rel: 'noopener noreferrer', onclick: () => track('official_click') }, h('b', {}, o.label), h('span', { class: 'w' }, o.text)))))),
       h('section', { class: 'rp-sec' }, h('div', { class: 'sent-box' }, h('h3', {}, '이미 돈을 보냈다면'), h('ol', {}, (j.ifSent || []).map((x) => h('li', {}, x))))),
       h('div', { class: 'rp-actions' },
         h('button', { class: 'btn btn-navy', type: 'button', onclick: () => window.print() }, 'PDF로 저장'),

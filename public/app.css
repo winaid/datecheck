@@ -761,3 +761,42 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .g-more { padding: clamp(40px, 6vw, 72px) 0 var(--sec-y); border-top: 1px solid var(--line); background: var(--paper); }
 .g-more h2 { margin-bottom: 18px; font-size: clamp(22px, 2.4vw, 28px); font-weight: 800; }
 @media (max-width: 640px) { .g-list li { padding: 11px 14px 11px 40px; font-size: 15.5px; } .g-list li::before { left: 16px; } .g-cta { padding: 22px 20px 24px; } }
+
+/* 직접 조회 안내 — 경찰민원24·더치트는 이용자가 직접 찾는다 */
+.lookup { margin-top: 16px; border-radius: 16px; background: linear-gradient(180deg, #f3f6fb, #eef2f8); border: 1.5px solid #d6deea; padding: 16px 16px 14px; }
+.lookup-h { display: grid; gap: 2px; margin-bottom: 12px; }
+.lookup-h b { font-size: 16px; color: var(--navy-900); }
+.lookup-h span { font-size: 14.5px; color: var(--ink-2); }
+.lookup-btns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 10px; align-items: stretch; }
+.lk { appearance: none; border: 0; cursor: pointer; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; text-align: left; font: inherit; color: #fff; border-radius: 14px; padding: 13px 16px; min-height: 64px; box-shadow: 0 10px 24px -14px rgba(17, 29, 51, .55); transition: transform .25s var(--ease), box-shadow .25s var(--ease), filter .2s; }
+.lk:hover { transform: translateY(-2px); box-shadow: 0 16px 30px -16px rgba(17, 29, 51, .6); filter: brightness(1.06); }
+.lk:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
+.lk-police { background: var(--navy-900); }
+.lk-thecheat { background: #1f5a96; }
+.lk-ic { width: 40px; height: 40px; border-radius: 12px; background: rgba(255, 255, 255, .14); display: grid; place-items: center; }
+.lk-ic svg { width: 22px; height: 22px; }
+.lk-t { display: grid; gap: 1px; min-width: 0; }
+.lk-t b { color: #fff; font-size: 15.5px; font-weight: 750; }
+.lk-t small { color: rgba(255, 255, 255, .78); font-size: 13px; font-weight: 600; }
+.lk-go { font-size: 20px; font-weight: 700; opacity: .9; }
+.lk-copy { appearance: none; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; color: var(--navy-900); background: #fff; border: 1.5px solid #cfd5df; border-radius: 14px; padding: 0 16px; min-height: 64px; white-space: nowrap; }
+.lk-copy:hover { border-color: var(--navy-900); }
+@media (max-width: 760px) {
+  .lookup-btns { grid-template-columns: minmax(0, 1fr); }
+  .lk-copy { min-height: 48px; }
+}
+
+/* 안내 팝업 */
+.sheet-card:has(.howto-shot) { width: min(640px, 100%); }
+.howto-k { display: inline-block; font-size: 13px; font-weight: 800; color: var(--rose-600); background: var(--rose-50); border-radius: 999px; padding: 3px 10px; margin-bottom: 8px; }
+.howto-steps { list-style: none; counter-reset: st; display: grid; gap: 8px; margin: 12px 0 14px; padding: 0; }
+.howto-steps li { counter-increment: st; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; font-size: 15.5px; color: var(--ink-2); }
+.howto-steps li::before { content: counter(st); width: 26px; height: 26px; border-radius: 50%; background: var(--navy-900); color: #fff; font-size: 13.5px; font-weight: 800; display: grid; place-items: center; margin-top: 1px; }
+.howto-copy { width: 100%; justify-content: center; margin-bottom: 14px; font-variant-numeric: tabular-nums; }
+.howto-shot { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #f6f7f9; }
+.howto-shot img { display: block; width: 100%; height: auto; }
+.howto-shot figcaption { font-size: 14px; color: var(--sub); padding: 10px 14px; border-top: 1px solid var(--line); background: #fff; }
+.howto-go { width: 100%; justify-content: center; gap: 8px; }
+.howto-url { text-align: center; font-size: 13.5px; color: var(--sub); margin-top: 8px; }
+.off a.off-guide em { display: inline-block; margin-top: 10px; font-style: normal; font-size: 14px; font-weight: 750; color: var(--rose-600); }
+@media print { .lookup { display: none !important; } }
