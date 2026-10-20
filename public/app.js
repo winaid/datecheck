@@ -1009,8 +1009,12 @@ const HOWTO = {
     title: '경찰민원24에서 사기 신고 이력 조회하기',
     img: (k) => (k === 'account' ? '/img/howto/police-account.webp' : '/img/howto/police-phone.webp'),
     size: [1920, 1326],
+    dpr: 1.5,
+    focus: [0.289, 0.817],
     imgM: (k) => (k === 'account' ? '/img/howto/police-account-m.webp' : '/img/howto/police-phone-m.webp'),
     sizeM: [780, 2324],
+    dprM: 2,
+    focusM: [0.5, 0.789],
     steps: (k) => (KIND_WORD[k]
       ? [`${KIND_WORD[k]}를 복사합니다.`, "경찰민원24 첫 화면에서 '사이버사기 피해신고 이력조회' 칸을 찾습니다. 폰에서는 조금 아래로 내리면 있습니다.", `빨간 상자에서 '${KIND_WORD[k]}'를 고르고, 번호를 붙여 넣은 뒤 조회를 누릅니다.`]
       : ["경찰민원24 첫 화면에서 '사이버사기 피해신고 이력조회' 칸을 찾습니다. 폰에서는 조금 아래로 내리면 있습니다.", '빨간 상자에서 전화번호, 계좌번호, 이메일 중 하나를 고르고, 번호를 넣은 뒤 조회를 누릅니다.']),
@@ -1024,8 +1028,12 @@ const HOWTO = {
     title: '더치트에서 피해 사례 검색하기',
     img: () => '/img/howto/thecheat.webp',
     size: [1920, 764],
+    dpr: 1.5,
+    focus: [0.5, 0.773],
     imgM: () => '/img/howto/thecheat-m.webp',
     sizeM: [1503, 833],
+    dprM: 1.5,
+    focusM: [0.638, 0.709],
     steps: (k) => [`${KIND_WORD[k] || '번호'}를 복사합니다.`, "더치트 검색 화면 가운데의 '사기피해사례 검색' 칸(빨간 상자)에 붙여 넣고 검색을 누릅니다."],
     note: '더치트는 피해자가 직접 등록한 사례를 모은 민간 서비스입니다.',
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
@@ -1091,8 +1099,8 @@ function openHowto(l, kind) {
     h('ol', { class: 'howto-steps' }, g.steps(kind).map((s) => h('li', {}, h('span', { class: 'w' }, s)))),
     copyBtn,
     h('figure', { class: 'howto-shot' },
-      // 폰에서는 경찰민원24 모바일 화면, 더치트는 폰 폭에 맞춰 자른 화면. 누르면 새 탭에서 크게
-      h('a', { class: 'howto-zoom', href: g.img(kind), target: '_blank', rel: 'noopener', 'aria-label': `${g.name} 화면 크게 보기`, onclick: (e) => { const im = e.currentTarget.querySelector('img'); if (im?.currentSrc) e.currentTarget.href = im.currentSrc; } },
+      // 폰에서는 경찰민원24 모바일 화면, 더치트는 폰 폭에 맞춰 자른 화면. 누르면 이 화면 위에 크게(새 페이지 없이)
+      h('button', { type: 'button', class: 'howto-zoom', 'aria-label': `${g.name} 화면 크게 보기`, onclick: (e) => openZoom(e.currentTarget.querySelector('img'), g) },
         h('picture', {},
           h('source', { media: '(max-width: 600px)', srcset: g.imgM(kind), width: g.sizeM[0], height: g.sizeM[1] }),
           h('img', { src: g.img(kind), alt: `${g.name} 화면. 빨간 상자가 번호를 넣고 검색하는 곳입니다.`, width: g.size[0], height: g.size[1] })),
@@ -1103,6 +1111,37 @@ function openHowto(l, kind) {
       onclick: () => { track(`howto_open_${guideOf(l)}`); if (l.copy) writeClipboard(l.copy); },
     }, l.copy ? `번호 복사하고 ${g.name} 열기` : `${g.name} 열기`, h('span', { 'aria-hidden': 'true' }, '↗')),
     h('p', { class: 'howto-url' }, new URL(l.url).host));
+}
+
+// 캡처 크게 보기 — 안내 팝업 위에 한 겹 더. 처음엔 빨간 상자 쪽으로 맞추고, 크면 밀어서 본다
+function openZoom(img, g) {
+  const mobile = matchMedia('(max-width: 600px)').matches;
+  const [w, ht] = mobile ? g.sizeM : g.size;
+  const natW = w / ((mobile ? g.dprM : g.dpr) || 1);
+  const focus = (mobile ? g.focusM : g.focus) || [0.5, 0.5];
+  const wide = w > ht;
+  // PC 는 화면 폭에 맞추고(원래 크기까지), 폰은 세로 그림은 폭에 맞추고 가로 그림은 빨간 상자가 한 화면에 들어올 만큼 키워 옆으로 민다
+  const dispW = mobile ? (wide ? Math.min(natW, innerWidth * 1.35) : innerWidth - 24) : Math.min(natW, innerWidth - 64);
+  const big = h('img', { src: img?.currentSrc || img?.src, alt: img?.alt || '', width: w, height: ht, style: `width:${Math.round(dispW)}px` });
+  const stage = h('div', { class: 'zm-stage' }, big);
+  const scroller = h('div', { class: 'zm-scroll' }, stage);
+  const closeBtn = h('button', { class: 'zm-x', type: 'button', 'aria-label': '크게 보기 닫기' }, '×');
+  const box = h('div', { class: 'zm', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${g.name} 화면 크게 보기` },
+    h('div', { class: 'zm-bar' }, h('b', {}, `${g.name} 화면`), h('span', { class: 'w' }, mobile && wide ? '옆으로 밀어서 보세요' : '빨간 상자가 번호 넣는 곳'), closeBtn),
+    scroller);
+  const prev = document.activeElement;
+  const close = () => { box.remove(); prev?.focus?.(); };
+  closeBtn.addEventListener('click', close);
+  scroller.addEventListener('click', (e) => { if (e.target === scroller || e.target === stage) close(); });
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+  document.body.append(box);
+  closeBtn.focus();
+  const aim = () => {
+    scroller.scrollLeft = focus[0] * big.clientWidth - scroller.clientWidth / 2;
+    scroller.scrollTop = focus[1] * big.clientHeight - scroller.clientHeight / 2;
+  };
+  if (big.complete) requestAnimationFrame(aim); else big.addEventListener('load', aim, { once: true });
+  track('howto_zoom');
 }
 
 function lookupPanel(guides, kind) {

@@ -1,26 +1,68 @@
 {
-  "police-phone": [
-    1920,
-    1326
-  ],
-  "police-phone-m": [
-    780,
-    2324
-  ],
-  "police-account": [
-    1920,
-    1326
-  ],
-  "police-account-m": [
-    780,
-    2324
-  ],
-  "thecheat": [
-    1920,
-    764
-  ],
-  "thecheat-m": [
-    1503,
-    833
-  ]
+  "police-phone": {
+    "size": [
+      1920,
+      1326
+    ],
+    "dpr": 1.5,
+    "focus": [
+      0.289,
+      0.817
+    ]
+  },
+  "police-phone-m": {
+    "size": [
+      780,
+      2324
+    ],
+    "dpr": 2,
+    "focus": [
+      0.5,
+      0.789
+    ]
+  },
+  "police-account": {
+    "size": [
+      1920,
+      1326
+    ],
+    "dpr": 1.5,
+    "focus": [
+      0.289,
+      0.817
+    ]
+  },
+  "police-account-m": {
+    "size": [
+      780,
+      2324
+    ],
+    "dpr": 2,
+    "focus": [
+      0.5,
+      0.789
+    ]
+  },
+  "thecheat": {
+    "size": [
+      1920,
+      764
+    ],
+    "dpr": 1.5,
+    "focus": [
+      0.5,
+      0.773
+    ]
+  },
+  "thecheat-m": {
+    "size": [
+      1503,
+      833
+    ],
+    "dpr": 1.5,
+    "focus": [
+      0.638,
+      0.709
+    ]
+  }
 }

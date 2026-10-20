@@ -22,7 +22,7 @@ const DESKTOP = { viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1.5
 
 // 대상 요소들을 감싸는 빨간 상자 + 꼬리표(above: 상자 위, below: 상자 아래)
 async function mark(page, selectors, label, { pad = 10, font = 16, line = 4, side = 'above' } = {}) {
-  await page.evaluate(({ selectors, label, pad, font, line, side, RED }) => {
+  return page.evaluate(({ selectors, label, pad, font, line, side, RED }) => {
     const rects = selectors.map((s) => document.querySelector(s).getBoundingClientRect());
     const x1 = Math.min(...rects.map((r) => r.left)) - pad + scrollX;
     const y1 = Math.min(...rects.map((r) => r.top)) - pad + scrollY;
@@ -37,15 +37,18 @@ async function mark(page, selectors, label, { pad = 10, font = 16, line = 4, sid
     document.body.append(box, tag);
     tag.style.left = `${x1}px`;
     tag.style.top = side === 'below' ? `${y2 + 8}px` : `${y1 - tag.offsetHeight - 8}px`;
+    return { cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
   }, { selectors, label, pad, font, line, side, RED });
 }
 
-async function save(buf, name) {
+async function save(buf, name, focus, clip, dpr) {
   const file = path.join(OUT, `${name}.webp`);
   await sharp(buf).webp({ quality: 82 }).toFile(file);
   const m = await sharp(file).metadata();
   console.log(name, `${m.width}×${m.height}`, `${Math.round(fs.statSync(file).size / 1024)}KB`);
-  return [m.width, m.height];
+  const fx = +((focus.cx - clip.x) / clip.width).toFixed(3);
+  const fy = +((focus.cy - clip.y) / clip.height).toFixed(3);
+  return { size: [m.width, m.height], dpr, focus: [fx, fy] };
 }
 
 const clearMarks = (page) => page.evaluate(() => document.querySelectorAll('[data-dc]').forEach((el) => el.remove()));
@@ -64,9 +67,10 @@ for (const [kind, val, word] of [['phone', 'P', '전화번호'], ['account', 'A'
     await p.addStyleTag({ content: HIDE_POPUPS });
     await p.selectOption(LOOKUP[0], val);
     await p.evaluate(() => scrollTo(0, 0));
-    await mark(p, LOOKUP, `여기서 ${word} 고르고 번호 넣고 조회`, { font: 26, line: 6, pad: 12, side: 'below' });
+    const fc = await mark(p, LOOKUP, `여기서 ${word} 고르고 번호 넣고 조회`, { font: 26, line: 6, pad: 12, side: 'below' });
     const r = await p.locator('.cyber-crime').boundingBox();
-    SIZES[`police-${kind}`] = await save(await p.screenshot({ clip: { x: 0, y: 0, width: 1280, height: Math.min(900, r.y + r.height + 24) } }), `police-${kind}`);
+    const clip = { x: 0, y: 0, width: 1280, height: Math.min(900, r.y + r.height + 24) };
+    SIZES[`police-${kind}`] = await save(await p.screenshot({ clip }), `police-${kind}`, fc, clip, DESKTOP.deviceScaleFactor);
     await ctx.close();
   }
   // 폰: 모바일 화면 맨 위부터 조회 칸까지
@@ -78,10 +82,11 @@ for (const [kind, val, word] of [['phone', 'P', '전화번호'], ['account', 'A'
     await p.addStyleTag({ content: HIDE_POPUPS });
     await p.selectOption(LOOKUP[0], val);
     await p.evaluate(() => { for (const el of document.querySelectorAll('.cyber-crime *')) if (el.children.length === 0 && el.textContent.includes('거래대상')) el.style.visibility = 'hidden'; });
-    await mark(p, LOOKUP, `여기서 ${word} 고르고 조회`, { font: 18, line: 4 });
+    const fc = await mark(p, LOOKUP, `여기서 ${word} 고르고 조회`, { font: 18, line: 4 });
     const r = await p.locator('.cyber-crime').boundingBox();
     const sy = await p.evaluate(() => scrollY);
-    SIZES[`police-${kind}-m`] = await save(await p.screenshot({ fullPage: true, clip: { x: 0, y: 0, width: 390, height: r.y + sy + r.height + 12 } }), `police-${kind}-m`);
+    const clip = { x: 0, y: 0, width: 390, height: r.y + sy + r.height + 12 };
+    SIZES[`police-${kind}-m`] = await save(await p.screenshot({ fullPage: true, clip }), `police-${kind}-m`, fc, clip, MOBILE.deviceScaleFactor);
     await ctx.close();
   }
 }
@@ -94,16 +99,18 @@ for (const [kind, val, word] of [['phone', 'P', '전화번호'], ['account', 'A'
   await p.waitForTimeout(2500);
   const inp = 'input[name="keyword"]';
   await p.evaluate((s) => { document.querySelector(s).closest('form').querySelector('input[type="image"], button').id = 'dc-btn'; }, inp);
-  await mark(p, [inp, '#dc-btn'], '여기에 번호를 붙여 넣고 검색', { font: 26, line: 6, pad: 10, side: 'below' });
+  const fc = await mark(p, [inp, '#dc-btn'], '여기에 번호를 붙여 넣고 검색', { font: 26, line: 6, pad: 10, side: 'below' });
   const r = await p.locator(inp).boundingBox();
   const bottom = r.y + r.height + 90;
   const bottomM = r.y + r.height + 136;
-  SIZES.thecheat = await save(await p.screenshot({ clip: { x: 0, y: 0, width: 1280, height: bottom } }), 'thecheat');
+  const clip = { x: 0, y: 0, width: 1280, height: bottom };
+  SIZES.thecheat = await save(await p.screenshot({ clip }), 'thecheat', fc, clip, DESKTOP.deviceScaleFactor);
   // 폰용: 로고·검색 메뉴·검색 칸이 들어가는 폭으로 자르고, 폰 폭으로 줄어도 보이게 선과 꼬리표를 크게
   await clearMarks(p);
-  await mark(p, [inp, '#dc-btn'], '여기에 번호 넣고 검색', { font: 48, line: 12, pad: 12, side: 'below' });
+  const fcM = await mark(p, [inp, '#dc-btn'], '여기에 번호 넣고 검색', { font: 48, line: 12, pad: 12, side: 'below' });
   const btn = await p.locator('#dc-btn').boundingBox();
-  SIZES['thecheat-m'] = await save(await p.screenshot({ clip: { x: 0, y: 0, width: Math.min(1280, btn.x + btn.width + 30), height: bottomM } }), 'thecheat-m');
+  const clipM = { x: 0, y: 0, width: Math.min(1280, btn.x + btn.width + 30), height: bottomM };
+  SIZES['thecheat-m'] = await save(await p.screenshot({ clip: clipM }), 'thecheat-m', fcM, clipM, DESKTOP.deviceScaleFactor);
   await ctx.close();
 }
 await b.close();
