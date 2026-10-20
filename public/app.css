@@ -551,8 +551,8 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .pend div { border: 1.5px dashed #ccd3dd; border-radius: 12px; padding: 10px 14px; font-size: 14.5px; color: var(--sub); }
 .pend b { color: var(--ink-2); font-weight: 700; margin-right: 6px; }
 .it-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.it-links a, .it-links button { font-size: 14px; font-weight: 650; text-decoration: none; border: 1.5px solid #d3d9e2; border-radius: 999px; padding: 7px 14px; background: #fff; color: var(--navy-900); transition: all .2s; }
-.it-links a:hover, .it-links button:hover { border-color: var(--navy-900); }
+.it-links > a, .it-links > button { font-size: 14px; font-weight: 650; text-decoration: none; border: 1.5px solid #d3d9e2; border-radius: 999px; padding: 7px 14px; background: #fff; color: var(--navy-900); transition: all .2s; }
+.it-links > a:hover, .it-links > button:hover { border-color: var(--navy-900); }
 .it.locked .lock-cover { margin-top: 12px; border-radius: 14px; background: repeating-linear-gradient(-45deg, #f6f3ee 0 10px, #f1ede6 10px 20px); padding: 22px; text-align: center; }
 .it.locked .lock-cover p { color: var(--ink-2); font-size: 15px; margin-bottom: 12px; }
 .na-list { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -681,7 +681,7 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
   .it-top { flex-wrap: wrap; row-gap: 8px; }
   .it-top h3 { flex: 1 1 calc(100% - 44px); }
   .pv-row .lock { display: block; margin-left: 0; font-size: 12.5px; }
-  .it-links a, .it-links button { flex: 1 1 100%; }
+  .it-links > a, .it-links > button { flex: 1 1 100%; }
 }
 .facts li .w { display: block; }
 @media (max-width: 400px) {
@@ -779,12 +779,32 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .lk-t b { color: #fff; font-size: 15.5px; font-weight: 750; }
 .lk-t small { color: rgba(255, 255, 255, .78); font-size: 13px; font-weight: 600; }
 .lk-go { font-size: 20px; font-weight: 700; opacity: .9; }
-.lk-copy { appearance: none; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; color: var(--navy-900); background: #fff; border: 1.5px solid #cfd5df; border-radius: 14px; padding: 0 16px; min-height: 64px; white-space: nowrap; }
-.lk-copy:hover { border-color: var(--navy-900); }
+.lookup .cpy { min-height: 64px; }
 @media (max-width: 760px) {
   .lookup-btns { grid-template-columns: minmax(0, 1fr); }
-  .lk-copy { min-height: 48px; }
+  .lookup .cpy { min-height: 52px; }
 }
+
+/* 복사 칸 — 값 + 복사 버튼 */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cpy { display: flex; align-items: stretch; min-height: 44px; background: #fff; border: 1.5px solid #cfd5df; border-radius: 12px; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
+.cpy:focus-within { border-color: var(--navy-600); box-shadow: 0 0 0 3px rgba(44, 67, 112, .15); }
+.cpy-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 6px 12px 6px 14px; }
+.cpy-l { font-size: 12px; font-weight: 800; color: var(--sub); white-space: nowrap; line-height: 1.3; }
+.cpy-v { display: block; min-width: 0; line-height: 1.3; font-size: 16px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: all; -webkit-user-select: all; cursor: text; }
+.cpy-b { appearance: none; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; border: 0; border-left: 1.5px solid #cfd5df; background: #f6f8fb; color: var(--navy-900); font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; transition: background-color .2s, color .2s; }
+.cpy-b:hover { background: #eaeff6; }
+.cpy-b:focus-visible { outline: 3px solid var(--rose); outline-offset: -3px; }
+.cpy-ic { display: grid; place-items: center; }
+.cpy-ic svg { width: 18px; height: 18px; display: block; }
+.cpy.done { border-color: var(--clear); }
+.cpy.done .cpy-b { background: var(--clear-bg); color: var(--clear); border-left-color: var(--clear); }
+.cpy.done .cpy-ic { animation: cpy-pop .35s var(--ease); }
+@keyframes cpy-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+.cpy-lg { min-height: 52px; }
+.cpy-lg .cpy-v { font-size: 18px; }
+.it-links .cpy { flex: 0 1 auto; border-radius: 12px; }
+@media (max-width: 480px) { .it-links .cpy { flex: 1 1 100%; } }
 
 /* 안내 팝업 */
 .sheet-card:has(.howto-shot) { width: min(640px, 100%); }
@@ -792,7 +812,7 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .howto-steps { list-style: none; counter-reset: st; display: grid; gap: 8px; margin: 12px 0 14px; padding: 0; }
 .howto-steps li { counter-increment: st; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; font-size: 15.5px; color: var(--ink-2); }
 .howto-steps li::before { content: counter(st); width: 26px; height: 26px; border-radius: 50%; background: var(--navy-900); color: #fff; font-size: 13.5px; font-weight: 800; display: grid; place-items: center; margin-top: 1px; }
-.howto-copy { width: 100%; justify-content: center; margin-bottom: 14px; font-variant-numeric: tabular-nums; }
+.howto-copy { margin-bottom: 14px; }
 .howto-shot { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #f6f7f9; }
 .howto-shot img { display: block; width: 100%; height: auto; }
 .howto-shot figcaption { font-size: 14px; color: var(--sub); padding: 10px 14px; border-top: 1px solid var(--line); background: #fff; }
@@ -800,3 +820,12 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .howto-url { text-align: center; font-size: 13.5px; color: var(--sub); margin-top: 8px; }
 .off a.off-guide em { display: inline-block; margin-top: 10px; font-style: normal; font-size: 14px; font-weight: 750; color: var(--rose-600); }
 @media print { .lookup { display: none !important; } }
+.howto-zoom { position: relative; display: block; cursor: zoom-in; }
+.howto-zoom-b { position: absolute; right: 10px; top: 10px; font-size: 12.5px; font-weight: 800; color: #fff; background: rgba(11, 20, 36, .72); border-radius: 999px; padding: 4px 10px; backdrop-filter: blur(4px); }
+.howto-zoom:hover .howto-zoom-b { background: rgba(11, 20, 36, .9); }
+/* 아주 좁은 폰: 번호가 잘리지 않게 복사 버튼은 아이콘만(이름은 aria-label) */
+@media (max-width: 360px) {
+  .cpy-b { padding: 0 13px; }
+  .cpy-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .cpy-txt { padding-left: 12px; padding-right: 10px; }
+}

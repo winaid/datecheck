@@ -40,7 +40,7 @@ const glue = (s) => String(s || '').replace(/([^\s⁠])([·ㆍ/])(?=[^\s⁠])/g,
 // 화면을 그린 뒤 런타임(.w) 밖의 글자도 같은 방식으로 묶는다
 function glueText(root = document.body) {
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement?.closest('.w, script, style, textarea, input, .srcs, .quote') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    acceptNode: (n) => (n.parentElement?.closest('.w, script, style, textarea, input, .srcs, .quote, .cpy') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
   const nodes = [];
   while (w.nextNode()) nodes.push(w.currentNode);
@@ -1008,12 +1008,12 @@ const HOWTO = {
     sub: '공식 · 최근 3개월 신고와 비교',
     title: '경찰민원24에서 사기 신고 이력 조회하기',
     img: (k) => (k === 'account' ? '/img/howto/police-account.webp' : '/img/howto/police-phone.webp'),
-    size: [1400, 588],
+    size: [1920, 1326],
     imgM: (k) => (k === 'account' ? '/img/howto/police-account-m.webp' : '/img/howto/police-phone-m.webp'),
-    sizeM: [780, 874],
+    sizeM: [780, 2324],
     steps: (k) => (KIND_WORD[k]
-      ? [`${KIND_WORD[k]}를 복사합니다.`, `경찰민원24 첫 화면의 빨간 상자에서 '${KIND_WORD[k]}'를 고르고, 번호를 붙여 넣은 뒤 조회를 누릅니다.`]
-      : ['경찰민원24 첫 화면의 빨간 상자에서 전화번호, 계좌번호, 이메일 중 하나를 고릅니다.', '번호를 넣고 조회를 누릅니다.']),
+      ? [`${KIND_WORD[k]}를 복사합니다.`, "경찰민원24 첫 화면에서 '사이버사기 피해신고 이력조회' 칸을 찾습니다. 폰에서는 조금 아래로 내리면 있습니다.", `빨간 상자에서 '${KIND_WORD[k]}'를 고르고, 번호를 붙여 넣은 뒤 조회를 누릅니다.`]
+      : ["경찰민원24 첫 화면에서 '사이버사기 피해신고 이력조회' 칸을 찾습니다. 폰에서는 조금 아래로 내리면 있습니다.", '빨간 상자에서 전화번호, 계좌번호, 이메일 중 하나를 고르고, 번호를 넣은 뒤 조회를 누릅니다.']),
     note: '최근 3개월 동안 3회 이상 신고된 번호와 비교합니다. 나오지 않아도 안전하다는 뜻은 아닙니다.',
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4 5.6v6.1c0 4.9 3.4 8.6 8 9.8 4.6-1.2 8-4.9 8-9.8V5.6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.6 12 2.4 2.4 4.4-4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   },
@@ -1023,10 +1023,10 @@ const HOWTO = {
     sub: '민간 · 피해자가 등록한 사례',
     title: '더치트에서 피해 사례 검색하기',
     img: () => '/img/howto/thecheat.webp',
-    size: [1690, 452],
+    size: [1920, 764],
     imgM: () => '/img/howto/thecheat-m.webp',
-    sizeM: [1410, 174],
-    steps: (k) => [`${KIND_WORD[k] || '번호'}를 복사합니다.`, '더치트 검색 화면의 빨간 상자에 붙여 넣고 검색을 누릅니다.'],
+    sizeM: [1503, 833],
+    steps: (k) => [`${KIND_WORD[k] || '번호'}를 복사합니다.`, "더치트 검색 화면 가운데의 '사기피해사례 검색' 칸(빨간 상자)에 붙여 넣고 검색을 누릅니다."],
     note: '더치트는 피해자가 직접 등록한 사례를 모은 민간 서비스입니다.',
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   },
@@ -1035,28 +1035,72 @@ const HOWTO = {
 const guideOf = (l) => l.guide || (/minwon24\.police\.go\.kr/.test(l.url) ? 'police' : /thecheat\.co\.kr/.test(l.url) ? 'thecheat' : null);
 const svgIcon = (markup) => { const s = h('span', { class: 'lk-ic' }); s.innerHTML = markup; return s; };
 
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); toast('복사했습니다'); return true; } catch { return false; }
+// ---------- 복사 칸: 값 + 복사 버튼, 누르면 '복사됨'으로 잠깐 바뀐다 ----------
+const ICON_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+async function writeClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* 권한이 없거나 http — 예전 방식으로 */ }
+  const ta = h('textarea', { readonly: true, style: 'position:fixed;top:-100px;opacity:0' });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+function copyField(value, { label, big } = {}) {
+  const val = h('span', { class: 'cpy-v', title: value }, value);
+  const ic = h('span', { class: 'cpy-ic' });
+  ic.innerHTML = ICON_COPY;
+  const txt = h('span', { class: 'cpy-t' }, '복사');
+  const live = h('span', { class: 'sr', 'aria-live': 'polite' });
+  const btn = h('button', { type: 'button', class: 'cpy-b', 'aria-label': `${label ? `${label} ` : ''}${value} 복사` }, ic, txt);
+  const wrap = h('div', { class: `cpy${big ? ' cpy-lg' : ''}` }, h('span', { class: 'cpy-txt' }, label ? h('span', { class: 'cpy-l' }, label) : null, val), btn, live);
+  let timer;
+  btn.addEventListener('click', async () => {
+    if (!(await writeClipboard(value))) {
+      // 복사가 막힌 브라우저: 번호를 선택해 두고 직접 복사하게
+      const r = document.createRange();
+      r.selectNodeContents(val);
+      getSelection().removeAllRanges();
+      getSelection().addRange(r);
+      toast('번호를 길게 눌러 복사해 주세요');
+      return;
+    }
+    track('copy');
+    wrap.classList.add('done');
+    ic.innerHTML = ICON_CHECK;
+    txt.textContent = '복사됨';
+    live.textContent = `${value} 복사했습니다`;
+    clearTimeout(timer);
+    timer = setTimeout(() => { wrap.classList.remove('done'); ic.innerHTML = ICON_COPY; txt.textContent = '복사'; live.textContent = ''; }, 2000);
+  });
+  return wrap;
 }
 
 function openHowto(l, kind) {
   const g = HOWTO[guideOf(l)];
   track(`howto_${guideOf(l)}`);
-  const copyBtn = l.copy ? h('button', { class: 'btn btn-line howto-copy', type: 'button', onclick: async (e) => { if (!(await copyText(l.copy))) e.currentTarget.textContent = l.copy; } }, `${l.copy} 복사`) : null;
+  const copyBtn = l.copy ? h('div', { class: 'howto-copy' }, copyField(l.copy, { label: KIND_WORD[kind] || '번호', big: true })) : null;
   sheet(
     h('span', { class: 'howto-k' }, '직접 조회'),
     h('h2', {}, g.title),
     h('ol', { class: 'howto-steps' }, g.steps(kind).map((s) => h('li', {}, h('span', { class: 'w' }, s)))),
     copyBtn,
     h('figure', { class: 'howto-shot' },
-      // 폰에서는 그 사이트의 모바일 화면(더치트는 검색 칸만 크게) 캡처
-      h('picture', {},
-        h('source', { media: '(max-width: 600px)', srcset: g.imgM(kind), width: g.sizeM[0], height: g.sizeM[1] }),
-        h('img', { src: g.img(kind), alt: `${g.name} 화면. 빨간 상자가 번호를 넣고 검색하는 곳입니다.`, width: g.size[0], height: g.size[1] })),
+      // 폰에서는 경찰민원24 모바일 화면, 더치트는 폰 폭에 맞춰 자른 화면. 누르면 새 탭에서 크게
+      h('a', { class: 'howto-zoom', href: g.img(kind), target: '_blank', rel: 'noopener', 'aria-label': `${g.name} 화면 크게 보기`, onclick: (e) => { const im = e.currentTarget.querySelector('img'); if (im?.currentSrc) e.currentTarget.href = im.currentSrc; } },
+        h('picture', {},
+          h('source', { media: '(max-width: 600px)', srcset: g.imgM(kind), width: g.sizeM[0], height: g.sizeM[1] }),
+          h('img', { src: g.img(kind), alt: `${g.name} 화면. 빨간 상자가 번호를 넣고 검색하는 곳입니다.`, width: g.size[0], height: g.size[1] })),
+        h('span', { class: 'howto-zoom-b', 'aria-hidden': 'true' }, '크게 보기')),
       h('figcaption', { class: 'w' }, g.note)),
     h('a', {
       class: 'btn btn-navy howto-go', href: l.url, target: '_blank', rel: 'noopener noreferrer',
-      onclick: () => { track(`howto_open_${guideOf(l)}`); if (l.copy) navigator.clipboard?.writeText(l.copy).catch(() => {}); },
+      onclick: () => { track(`howto_open_${guideOf(l)}`); if (l.copy) writeClipboard(l.copy); },
     }, l.copy ? `번호 복사하고 ${g.name} 열기` : `${g.name} 열기`, h('span', { 'aria-hidden': 'true' }, '↗')),
     h('p', { class: 'howto-url' }, new URL(l.url).host));
 }
@@ -1072,7 +1116,7 @@ function lookupPanel(guides, kind) {
         return h('button', { type: 'button', class: `lk lk-${key}`, onclick: () => openHowto({ ...l, copy: l.copy || copy }, kind) },
           svgIcon(g.icon), h('span', { class: 'lk-t' }, h('b', {}, g.btn), h('small', {}, g.sub)), h('span', { class: 'lk-go', 'aria-hidden': 'true' }, '→'));
       }),
-      copy ? h('button', { type: 'button', class: 'lk-copy', onclick: async (e) => { if (!(await copyText(copy))) e.currentTarget.textContent = copy; } }, `${copy} 복사`) : null));
+      copy ? copyField(copy, { label: KIND_WORD[kind] || '번호' }) : null));
 }
 
 function linkRow(links, itemId) {
@@ -1084,7 +1128,7 @@ function linkRow(links, itemId) {
     guides.length ? lookupPanel(guides, kind) : null,
     rest.length ? h('div', { class: 'it-links' }, rest.map((l) => [
       ext(l.url, l.short || l.label),
-      l.copy ? h('button', { type: 'button', onclick: async (e) => { if (!(await copyText(l.copy))) e.target.textContent = l.copy; } }, `${l.copy} 복사`) : null,
+      l.copy ? copyField(l.copy, { label: '번호' }) : null,
     ])) : null,
   ];
 }
