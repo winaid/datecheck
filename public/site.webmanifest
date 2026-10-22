@@ -1,7 +1,7 @@
 {
   "name": "DATE CHECK",
   "short_name": "DATE CHECK",
-  "description": "만나기 전, 확인하세요.",
+  "description": "받은 메시지·송금 요청 안전 점검",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FAF7F2",

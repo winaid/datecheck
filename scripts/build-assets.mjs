@@ -54,7 +54,7 @@ fs.writeFileSync(path.join(PUB, 'img', 'logo-512.png'), await png(512, { bg: CRE
 fs.writeFileSync(path.join(PUB, 'site.webmanifest'), `${JSON.stringify({
   name: 'DATE CHECK',
   short_name: 'DATE CHECK',
-  description: '만나기 전, 확인하세요.',
+  description: '받은 메시지·송금 요청 안전 점검',
   start_url: '/',
   display: 'standalone',
   background_color: CREAM,
@@ -94,8 +94,8 @@ await shoot(`<!doctype html><meta charset="utf-8">${FONT}<style>
   p{font-size:28px;color:rgba(255,255,255,.82);line-height:1.5}
 </style><div class="bg"></div><div class="scrim"></div><div class="in">
   <div class="logo"><i>${markInline}</i><span><b>DATE</b> CHECK</span></div>
-  <h1>만나기 전, 확인하세요.</h1>
-  <p>상대에게 받은 정보를 AI와 공식 데이터로 교차검증합니다.</p>
+  <h1>보내기 전, 확인하세요.</h1>
+  <p>받은 메시지와 송금 요청을 AI가 먼저 살펴봅니다.</p>
 </div>`, 1200, 630, path.join(PUB, 'og.jpg'));
 console.log('공유 이미지 완료');
 

@@ -81,7 +81,7 @@ function countUp(el, to, dur = 1100) {
 }
 
 // ---------- 설정 (항목 이름·요금은 서버 한 곳에서) ----------
-let CONFIG = { checks: [], plans: {}, jobs: [], official: [] };
+let CONFIG = { checks: [], plans: {}, addons: {}, jobs: [], official: [] };
 const NEED = {
   phone: { need: '전화번호', g: 'contact' },
   account: { need: '계좌번호', g: 'contact' },
@@ -97,11 +97,14 @@ const NEED = {
   company: { need: '회사명 또는 상호', g: 'biz' },
   job: { need: '직업', g: 'biz' },
 };
+// 2026-10-22 오너 결정 — 무료 점검 + 정밀 분석(방문자마다 시험 가격) + 신고용 정리본·재검사
+const won = (p) => `${Number(p).toLocaleString('ko-KR')}원`;
 const priceText = (plan) => {
-  const p = CONFIG.plans?.[plan]?.price;
-  return p ? `${p.toLocaleString('ko-KR')}원` : '가격 미정';
+  if (plan === 'free') return '0원';
+  const p = CONFIG.plans?.[plan]?.price ?? CONFIG.addons?.[plan]?.price;
+  return p ? won(p) : '가격 미정';
 };
-const planLabel = (plan) => CONFIG.plans?.[plan]?.label || (plan === 'full' ? 'Full Check' : 'Standard');
+const planLabel = (plan) => (plan === 'full' ? '정밀 분석' : '무료 점검');
 const checkTitle = (id) => CONFIG.checks.find((c) => c.id === id)?.title || '';
 
 // =====================================================================
@@ -217,7 +220,7 @@ function renderCheckGrid() {
     const n = NEED[c.id] || {};
     const card = h('article', { class: 'ck rv', 'data-g': n.g, style: `--d:${(i % 4) * 0.06}s` },
       h('span', { class: 'ck-no' }, pad2(c.no)),
-      h('span', { class: `ck-plan ${c.plan}` }, c.plan === 'full' ? 'Full Check' : 'Standard'),
+      h('span', { class: `ck-plan ${c.plan}` }, c.plan === 'full' ? '정밀 분석' : '무료'),
       h('h3', {}, c.title),
       h('p', { class: 'ck-need' }, h('b', {}, '필요한 정보 '), n.need || ''),
       h('div', { class: 'tags' }, c.sources.map((s) => h('span', {}, s))));
@@ -322,7 +325,7 @@ const INPUTS = [
   { key: 'claims', label: '상대가 직접 말한 정보', desc: '사는 곳, 경력, 운영 기간' },
   { key: 'name', label: '이름', desc: '교차검증 보조 정보' },
 ];
-const STEP_LABEL = { select: '정보 선택', confirm: '입력 확인', run: '사전분석', preview: '분석 결과', pay: '결제' };
+const STEP_LABEL = { select: '받은 것 선택', confirm: '입력 확인', run: '점검', preview: '점검 결과', pay: '결제' };
 const BANKS = ['KB국민', '신한', '우리', '하나', 'NH농협', 'IBK기업', '카카오뱅크', '토스뱅크', '케이뱅크', '새마을금고', '우체국', '수협', '신협', 'SC제일', '부산', '경남', 'iM뱅크', '광주', '전북', '제주', '기타'];
 const CLAIM_HINTS = ['서울에 산다고 했어요', '해외에서 일한다고 했어요', '회사를 5년째 운영 중이라고 했어요', '돈이 급하다고 했어요'];
 
@@ -467,6 +470,7 @@ function resetWizard() {
   W.token = null;
   W.preview = null;
   W.plan = 'full';
+  W.recheckToken = null;
   W.opened = false;
 }
 
@@ -837,11 +841,11 @@ const STEPS = {
     const boxes = ['상대방에게 직접 받은 정보만 입력했습니다.', '분석이 끝나면 입력한 원본이 자동으로 삭제되는 것을 확인했습니다.'].map((t, k) => h('label', { class: 'consent' },
       h('input', { type: 'checkbox', checked: W.consent[k], onchange: (e) => { W.consent[k] = e.target.checked; } }), h('span', {}, t)));
     return {
-      body: [...head('이대로 사전분석을 시작할까요?', '결제 전에 무엇을 찾았는지 먼저 보여 드립니다.'),
+      body: [...head('이대로 무료 점검을 시작할까요?', '번호·링크·사업자 결과는 무료로 바로 보여 드리고, 대화에서 찾은 신호 수도 알려 드립니다.'),
         h('dl', { class: 'sum' }, rows),
         h('p', { class: 'pv-line' }, `총 13개 항목 중 ${ids.length}개 검사 가능`),
         boxes],
-      next: { label: '무료 사전분석 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next() },
+      next: { label: '무료 점검 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next() },
     };
   },
 
@@ -854,7 +858,7 @@ const STEPS = {
     }));
     const err = h('p', { class: 'err-msg', role: 'alert' });
     return {
-      body: [...head('교차검증하고 있습니다', '공식 데이터와 공개 자료를 조회하고 대화를 분석합니다. 보통 10초 안팎 걸립니다.'), bar, list, err],
+      body: [...head('받은 메시지와 정보를 살펴보고 있습니다', '대화를 분석하고 링크·사업자 같은 공개 정보를 확인합니다. 보통 10초 안팎 걸립니다.'), bar, list, err],
       back: false,
       after: () => runAnalysis(list, bar.firstChild, err),
     };
@@ -864,51 +868,78 @@ const STEPS = {
     const p = W.preview;
     const items = p.items.filter((i) => i.checkable);
     const skipped = p.items.length - items.length;
-    const fullSignals = items.filter((i) => i.plan === 'full').reduce((s, i) => s + i.signalCount, 0);
-    const stdSignals = items.filter((i) => i.plan === 'standard').reduce((s, i) => s + i.signalCount, 0);
+    const fullItems = items.filter((i) => i.plan === 'full');
+    const fullSignals = fullItems.reduce((s, i) => s + i.signalCount, 0);
+    const freeSignals = items.filter((i) => i.plan !== 'full').reduce((s, i) => s + i.signalCount, 0);
     const chip = (i) => (i.status === 'signal' ? ['st-signal', `확인 신호 ${i.signalCount}건`] : i.status === 'note' ? ['st-note', `참고 ${i.noteCount}건`] : i.status === 'pending' ? ['st-pending', '연동 준비 중'] : ['st-clear', '특이사항 없음']);
     const nN = h('b', {}, '0');
     const nS = h('b', {}, '0');
-    const plans = h('div', { class: 'plan-pick' }, ['standard', 'full'].map((k) => h('button', {
-      class: 'pp', type: 'button', 'aria-pressed': String(W.plan === k),
+    // 정밀 분석으로 볼 것이 없으면(대화·사진 없음) 무료 점검을 먼저 고른다
+    if (!fullItems.length) W.plan = 'free';
+    W.recheckToken = recentFullToken();
+    const fullPrice = W.recheckToken ? CONFIG.addons?.recheck?.price : CONFIG.plans?.full?.price;
+    const desc = {
+      free: `번호·계좌 직접 조회 안내, 링크·사업자 결과${freeSignals ? `, 확인 신호 ${freeSignals}건` : ''}`,
+      full: W.recheckToken
+        ? '24시간 안에 정밀 분석을 받아 재검사 값이 적용됩니다. 대화 근거 문장, 사진 도용 검색, 대화 순서 정리'
+        : `무료 결과 전부와 대화 근거 문장${fullSignals ? ` ${fullSignals}건` : ''}, 사진 도용 검색, 대화 순서 정리, 다음에 할 일`,
+    };
+    const plans = h('div', { class: 'plan-pick' }, ['free', 'full'].map((k) => h('button', {
+      class: 'pp', type: 'button', 'aria-pressed': String(W.plan === k), disabled: k === 'full' && !fullItems.length,
       onclick: (e) => { W.plan = k; $$('.pp', plans).forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); },
     },
     k === 'full' && fullSignals ? h('span', { class: 'rec' }, '추천') : null,
-    h('b', {}, planLabel(k)), h('p', { class: 'pp-price' }, priceText(k)),
-    h('span', {}, k === 'full' ? `공식 데이터와 AI 분석 전부, 확인 신호 ${p.totals.signals}건 공개` : `공식 데이터 검증, 확인 신호 ${stdSignals}건 공개`))));
+    h('b', {}, k === 'full' && W.recheckToken ? '정밀 분석 · 재검사' : planLabel(k)),
+    h('p', { class: 'pp-price' }, k === 'full' ? (fullPrice ? won(fullPrice) : '가격 미정') : '0원'),
+    h('span', {}, k === 'full' && !fullItems.length ? '대화나 사진을 넣으면 고를 수 있습니다' : desc[k]))));
     return {
-      body: [...head('무료 사전분석 결과', null),
-        h('p', { class: 'pv-line' }, h('span', { class: 'nw' }, `총 13개 항목 중 ${p.totals.checkable}개 검사 가능`), ' / ', h('span', { class: 'nw' }, `확인 신호 ${p.totals.signals}개 발견`)),
+      body: [...head('무료 점검 결과', null),
+        h('p', { class: 'pv-line' }, h('span', { class: 'nw' }, `총 13개 항목 중 ${p.totals.checkable}개 점검`), ' / ', h('span', { class: 'nw' }, `확인 신호 ${p.totals.signals}개 발견`)),
         h('div', { class: 'pv-stat' },
-          h('div', {}, h('p', {}, '검사한 항목'), nN, h('p', {}, '13개 중')),
+          h('div', {}, h('p', {}, '점검한 항목'), nN, h('p', {}, '13개 중')),
           h('div', { class: 'sig' }, h('p', {}, '확인 신호'), nS, h('p', {}, p.totals.notes ? `참고 ${p.totals.notes}건 별도` : '건'))),
         p.notes?.length ? h('p', { class: 'notice', style: 'margin-bottom:16px' }, p.notes.join(' ')) : null,
         h('div', { class: 'pv-list' }, items.map((i, k) => {
           const [cls, txt] = chip(i);
           return h('div', { class: 'pv-row', style: `animation-delay:${k * 0.05}s` },
             h('span', { class: 'no' }, pad2(i.no)),
-            h('span', {}, i.title, h('span', { class: 'lock' }, i.plan === 'full' ? ' · Full Check' : '')),
+            h('span', {}, i.title, h('span', { class: 'lock' }, i.plan === 'full' ? ' · 정밀 분석' : ' · 무료')),
             h('span', { class: `chip-st ${cls}` }, txt));
         })),
-        skipped ? h('p', { class: 'pv-more' }, `정보가 없어 검사하지 않은 항목 ${skipped}개`) : null,
+        skipped ? h('p', { class: 'pv-more' }, `정보가 없어 점검하지 않은 항목 ${skipped}개`) : null,
         h('p', { class: 'lbl', style: 'font-weight:800;margin-bottom:10px' }, '리포트 고르기'),
         plans],
       back: false,
       after: () => { countUp(nN, p.totals.checkable, 900); countUp(nS, p.totals.signals, 1100); track('preview_view'); },
-      next: { label: '결제하고 리포트 보기', rose: true, ok: () => true, go: () => { track('plan_view'); next(); } },
+      next: {
+        label: '리포트 열기', rose: true, ok: () => true,
+        go: async () => {
+          track('plan_view');
+          if (W.plan !== 'free') { next(); return; }
+          const btn = $('#wz-next');
+          btn.disabled = true;
+          try {
+            await payAndOpen({ token: W.token, plan: 'free', visitor });
+          } catch (e) {
+            toast(e.message || '리포트를 열지 못했습니다');
+            btn.disabled = false;
+          }
+        },
+      },
     };
   },
 
   pay() {
     const err = h('p', { class: 'err-msg', role: 'alert' });
+    const recheck = Boolean(W.recheckToken);
     return {
-      body: [...head('결제', '구독 없이 이번 검증 한 건만 결제합니다.'),
+      body: [...head('결제', '구독 없이 이번 점검 한 건만 결제합니다.'),
         h('div', { class: 'pay-box' }, h('dl', {},
-          h('dt', {}, '상품'), h('dd', {}, `DATE CHECK ${planLabel(W.plan)}`),
-          h('dt', {}, '검증 항목'), h('dd', {}, `${W.preview.totals.checkable}개`),
+          h('dt', {}, '상품'), h('dd', {}, recheck ? 'DATE CHECK 재검사(정밀 분석)' : 'DATE CHECK 정밀 분석'),
+          h('dt', {}, '점검 항목'), h('dd', {}, `${W.preview.totals.checkable}개`),
           h('dt', {}, '리포트 보관'), h('dd', {}, '결제 후 24시간'),
-          h('dt', {}, '금액'), h('dd', {}, priceText(W.plan)))),
-        h('p', { class: 'notice w' }, '시험판이라 결제 수단이 연결돼 있지 않습니다. 아래 버튼을 누르면 테스트 결제로 처리됩니다.'),
+          h('dt', {}, '금액'), h('dd', {}, priceText(recheck ? 'recheck' : 'full')))),
+        h('p', { class: 'notice w' }, '시험판이라 결제 수단이 연결돼 있지 않습니다. 아래 버튼을 누르면 테스트 결제로 처리됩니다. 리포트를 연 뒤에는 디지털 콘텐츠 특성상 환불이 제한될 수 있습니다.'),
         err],
       backTo: 'preview',
       next: {
@@ -917,13 +948,7 @@ const STEPS = {
           const btn = $('#wz-next');
           btn.disabled = true;
           try {
-            const r = await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: W.token, plan: W.plan }) });
-            const j = await r.json();
-            if (!r.ok) throw new Error(j.error);
-            keepReport(j);
-            resetWizard();
-            closeWizard();
-            navigate(`/report/${j.id}`);
+            await payAndOpen({ token: W.token, plan: 'full', visitor, recheckToken: W.recheckToken || undefined });
           } catch (e) {
             err.textContent = e.message || '결제 처리 중 문제가 생겼습니다.';
             btn.disabled = false;
@@ -933,6 +958,17 @@ const STEPS = {
     };
   },
 };
+
+// 결제(시험판)하고 리포트로 — 무료 점검도 같은 길로 연다
+async function payAndOpen(body) {
+  const r = await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error);
+  keepReport(j);
+  resetWizard();
+  closeWizard();
+  navigate(`/report/${j.id}`);
+}
 
 async function runAnalysis(list, bar, err) {
   const rows = $$('li', list);
@@ -951,8 +987,8 @@ async function runAnalysis(list, bar, err) {
     // 서버 함수가 받는 요청 크기 한도(4.5MB) 안으로
     if (body.length > 4_200_000) throw new Error('올린 사진이 너무 큽니다. 캡처 수를 줄여 주세요.');
     const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-    const j = await r.json().catch(() => ({ error: '검증 중에 문제가 생겼습니다. 잠시 뒤 다시 시도해 주세요.' }));
-    if (!r.ok) throw new Error(j.error || '검증 중에 문제가 생겼습니다.');
+    const j = await r.json().catch(() => ({ error: '점검 중에 문제가 생겼습니다. 잠시 뒤 다시 시도해 주세요.' }));
+    if (!r.ok) throw new Error(j.error || '점검 중에 문제가 생겼습니다.');
     const wait = Math.max(0, 2600 - (performance.now() - t0));
     await sleep(wait);
     done = true;
@@ -1189,7 +1225,8 @@ function linkRow(links, itemId) {
   return [
     guides.length ? lookupPanel(guides, kind) : null,
     rest.length ? h('div', { class: 'it-links' }, rest.map((l) => [
-      ext(l.url, l.short || l.label),
+      // 네이버는 API 대신 이용자 브라우저에서 검색 결과를 연다(2026-10-22)
+      l.naver ? h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'nv-btn', onclick: () => track('naver_click') }, h('span', { class: 'nv-n', 'aria-hidden': 'true' }, 'N'), l.short || l.label) : ext(l.url, l.short || l.label),
       l.copy ? copyField(l.copy, { label: '번호' }) : null,
     ])) : null,
   ];
@@ -1202,11 +1239,11 @@ function itemCard(it, id) {
       h('span', { class: 'it-no' }, pad2(it.no)),
       h('h3', {}, glue(it.title)),
       h('span', { class: `chip-st ${cls}` }, txt)),
-    h('div', { class: 'tags' }, (it.sources || []).filter((s) => s !== '더치트 API').map((s) => h('span', {}, s)), ['phone', 'account'].includes(it.id) && (it.sources || []).includes('더치트 API') ? h('span', {}, '경찰민원24·더치트 직접 조회') : null, it.plan === 'full' ? h('span', {}, 'Full Check') : null));
+    h('div', { class: 'tags' }, (it.sources || []).filter((s) => !['더치트 API', '공개 웹 언급'].includes(s)).map((s) => h('span', {}, s)), ['phone', 'account'].includes(it.id) && (it.sources || []).includes('더치트 API') ? h('span', {}, '경찰민원24·더치트 직접 조회') : null, it.plan === 'full' ? h('span', {}, '정밀 분석') : null));
   if (it.locked) {
     card.append(h('div', { class: 'lock-cover' },
-      h('p', { class: 'w' }, it.signalCount ? `이 항목에서 확인 신호 ${it.signalCount}건이 나왔습니다. 근거 문장은 Full Check에서 볼 수 있습니다.` : '이 항목의 근거와 상세 내용은 Full Check에서 볼 수 있습니다.'),
-      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(id) }, 'Full Check로 업그레이드')));
+      h('p', { class: 'w' }, it.signalCount ? `이 항목에서 확인 신호 ${it.signalCount}건이 나왔습니다. 근거 문장은 정밀 분석에서 볼 수 있습니다.` : '이 항목의 근거와 상세 내용은 정밀 분석에서 볼 수 있습니다.'),
+      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(id) }, `정밀 분석 열기 · ${OFFER.full ? won(OFFER.full) : priceText('full')}`)));
     return card;
   }
   for (const s of it.signals || []) {
@@ -1222,15 +1259,38 @@ function itemCard(it, id) {
   const pend = (it.pending || []).filter((p) => p.label !== '더치트 API');
   if (pend.length) card.append(h('div', { class: 'pend' }, pend.map((p) => h('div', {}, h('b', {}, glue(p.label)), glue(p.text)))));
   for (const el of linkRow(it.links, it.id) || []) if (el) card.append(el);
+  // 정밀 분석 — 신호가 있는 대화 항목에는 '다음에 할 일'
+  if (NEXT_STEP[it.id] && (it.signals || []).length) card.append(h('div', { class: 'next-step' }, h('b', {}, '다음에 할 일'), h('ul', {}, NEXT_STEP[it.id].map((t) => h('li', { class: 'w' }, t)))));
   return card;
 }
+
+const NEXT_STEP = {
+  money: ['돈을 보내기 전에 짧게라도 영상통화로 얼굴을 확인하자고 해 보세요.', '받는 계좌의 이름이 상대가 말한 이름과 같은지 확인하세요. 다른 사람 이름이면 보내지 마세요.', '수수료·세금·보증금을 먼저 내라는 요구는 거절하세요.'],
+  invest: ['권한 투자 사이트나 거래소가 금융위원회 신고 업체인지 먼저 확인하세요.', '수익을 보장한다는 말은 정상 투자에서 하지 않는 말입니다. 돈을 넣기 전에 멈추세요.', '대화를 다른 메신저로 옮기자고 하면 지금 대화를 캡처해 두세요.'],
+  privacy: ['인증번호·비밀번호·신분증 사진은 누구에게도 보내지 마세요.', '설치하라는 앱이 있다면 설치하지 말고, 이미 설치했다면 삭제한 뒤 은행에 알리세요.'],
+  avoid: ['만나기 전에 짧은 영상통화를 먼저 제안해 보세요.', '계속 미룬다면 돈 이야기가 나와도 응하지 마세요.'],
+  mismatch: ['맞지 않는 부분을 직접 물어보고 답을 캡처해 두세요.', '회사나 사는 곳은 공개 정보로 다시 확인할 수 있습니다.'],
+  photo: ['같은 사진이 나온 페이지의 인물과 상대가 같은 사람인지 영상통화로 확인하세요.'],
+};
 
 // ---------- 리포트 보관: 서버가 아니라 이 기기에, 암호화된 봉투로 24시간 ----------
 const RKEY = 'dc-r-';
 const reportCache = new Map();
 function keepReport(j) {
-  try { localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt })); } catch { /* 저장 못 해도 이번 화면에서는 연다 */ }
+  try { localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt, plan: j.report?.plan || null, paidAt: j.report?.paidAt || null })); } catch { /* 저장 못 해도 이번 화면에서는 연다 */ }
   if (j.report) reportCache.set(j.id, j.report);
+}
+// 재검사 값 — 이 기기에서 24시간 안에 정밀 분석을 결제한 리포트가 있으면 그 봉투를 함께 보낸다(서버가 다시 확인)
+function recentFullToken() {
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith(RKEY)) continue;
+      const v = storedReport(k.slice(RKEY.length));
+      if (v?.plan === 'full' && v.paidAt && Date.now() - v.paidAt < 86400000) return v.token;
+    }
+  } catch { /* 없음 */ }
+  return null;
 }
 function storedReport(id) {
   try {
@@ -1249,11 +1309,109 @@ function purgeReports() {
   } catch { /* 없음 */ }
 }
 
-async function upgrade(id) {
+// 무료 점검 → 정밀 분석, 신고용 정리본 추가 (시험판 결제)
+async function upgrade(id, addon) {
   const s = storedReport(id);
-  const r = s ? await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, plan: 'full' }) }) : null;
+  const body = addon ? { token: s?.token, addon } : { token: s?.token, plan: 'full', visitor, recheckToken: recentFullToken() || undefined };
+  const r = s ? await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) : null;
   const j = r ? await r.json().catch(() => ({})) : {};
-  if (r?.ok) { keepReport(j); toast('Full Check로 열었습니다'); showReport(id); } else toast(j.error || '리포트 보관 시간이 지났습니다');
+  if (r?.ok) {
+    keepReport(j);
+    toast(addon ? '신고용 정리본을 만들었습니다' : '정밀 분석으로 열었습니다');
+    await showReport(id);
+    if (addon === 'casefile') openCasefile(j.report);
+  } else toast(j.error || '리포트 보관 시간이 지났습니다');
+}
+
+// ---------- 리포트 덧붙이는 칸: 대화 순서 정리 · 신고용 정리본 · 재검사 (2026-10-22) ----------
+let OFFER = {};
+const ymdText = (d) => `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`;
+
+function timelineSec(j) {
+  const tl = j.timeline;
+  if (!tl) return null;
+  if (tl.locked) {
+    if (!tl.count) return null;
+    return h('section', { class: 'rp-sec' }, h('div', { class: 'tl-lock' },
+      h('h2', { class: 'rp-sec-t' }, '대화 순서 정리'),
+      h('p', { class: 'w' }, `상대가 한 말 가운데 확인할 말 ${tl.count}줄을 대화 순서대로 정리했습니다. 처음 돈 이야기가 나온 곳도 짚어 드립니다.`),
+      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(j.id) }, `정밀 분석 열기 · ${OFFER.full ? won(OFFER.full) : priceText('full')}`)));
+  }
+  return h('section', { class: 'rp-sec' },
+    h('h2', { class: 'rp-sec-t' }, '대화 순서 정리', h('small', {}, tl.rows.length ? `전체 ${tl.total}줄 중 ${tl.rows.length}줄` : `전체 ${tl.total}줄`)),
+    h('p', { class: 'w sec-desc' }, tl.rows.length ? '상대가 한 말 가운데 확인 신호나 금액이 나온 말만 순서대로 모았습니다.' : '상대가 한 말에서 돈 이야기나 확인 신호가 나온 말은 없었습니다.'),
+    tl.rows.length ? h('ol', { class: 'tl' }, tl.rows.map((r) => h('li', { class: r.firstMoney ? 'first' : '' },
+      h('span', { class: 'tl-n' }, `${r.n}번째 말`),
+      h('div', { class: 'tl-b' },
+        r.firstMoney ? h('em', { class: 'tl-first' }, '처음 돈 이야기') : null,
+        h('p', { class: 'tl-q' }, r.text),
+        r.amount || r.tags.length ? h('div', { class: 'tl-tags' }, r.amount ? h('span', { class: 'amt' }, r.amount) : null, r.tags.map((t) => h('span', {}, t))) : null)))) : null);
+}
+
+function casefileSec(j) {
+  if (j.casefile) {
+    return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card on' },
+      h('div', {}, h('b', {}, '신고용 정리본'), h('p', { class: 'w' }, '상대 정보, 확인 신호, 대화 순서, 챙길 자료와 신고처를 한 장으로 정리했습니다.')),
+      h('button', { class: 'btn btn-navy', type: 'button', onclick: () => openCasefile(j) }, '정리본 보기·인쇄')));
+  }
+  if (!OFFER.casefile) return null;
+  return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card' },
+    h('div', {}, h('b', {}, '신고용 정리본'), h('p', { class: 'w' }, '돈을 보냈거나 신고를 생각하고 있다면, 경찰 신고에 붙일 상대 정보·확인 신호·대화 순서·챙길 자료를 한 장으로 만들어 드립니다.')),
+    h('button', { class: 'btn btn-rose', type: 'button', onclick: () => upgrade(j.id, 'casefile') }, `정리본 만들기 · ${won(OFFER.casefile)}`)));
+}
+
+function recheckSec(j) {
+  if (!OFFER.recheck) return null;
+  return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card re' },
+    h('div', {}, h('b', {}, '새 대화가 왔나요?'), h('p', { class: 'w' }, `이 리포트를 받은 뒤 24시간 안에는 새 대화나 다른 상대를 ${won(OFFER.recheck)}에 정밀 분석합니다.`)),
+    h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '재검사 시작')));
+}
+
+// 신고용 정리본 — 화면 위 문서로 열고, 인쇄하면 이 문서만 나온다
+function openCasefile(j) {
+  const cf = j?.casefile;
+  if (!cf) return;
+  const sub = cf.subject || {};
+  const info = [['전화번호', sub.phone], ['계좌', sub.account], ['SNS', sub.sns], ['사이트 주소', sub.url], ['회사·상호', sub.company], ['사업자등록번호', sub.biz], ['직업·근무처', sub.job], ['상대가 한 말', sub.claims]].filter(([, v]) => v);
+  const sigItems = (j.items || []).filter((i) => i.checkable && !i.locked && (i.signals || []).length);
+  const rows = j.timeline && !j.timeline.locked ? j.timeline.rows : [];
+  const quoteText = (e) => `${e.before || ''}${e.match || ''}${e.after || ''}`;
+  const doc = h('article', { class: 'cf-doc' },
+    h('header', { class: 'cf-h' },
+      h('p', { class: 'cf-eyebrow' }, 'DATE CHECK'),
+      h('h1', {}, '사이버사기 신고용 정리본'),
+      h('p', {}, `작성 ${ymdText(new Date())} · 점검 ${ymdText(new Date(j.createdAt))}`)),
+    h('p', { class: 'cf-disc w' }, '받은 메시지와 정보를 DATE CHECK가 분석한 결과를 정리한 참고 자료입니다. 사기 여부는 수사기관이 판단합니다.'),
+    h('h2', {}, '1. 상대방 정보'),
+    info.length ? h('dl', { class: 'cf-dl' }, info.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : h('p', { class: 'cf-empty' }, '입력한 상대방 정보가 없습니다.'),
+    h('h2', {}, '2. 대화에서 확인된 내용'),
+    rows.length ? h('ol', { class: 'cf-tl' }, rows.map((r) => h('li', {}, h('b', {}, `${r.n}번째 말${r.firstMoney ? ' · 처음 돈 이야기' : ''}`), h('span', {}, `“${r.text}”`), r.tags.length || r.amount ? h('small', {}, [r.amount, ...r.tags].filter(Boolean).join(' · ')) : null)))
+      : h('p', { class: 'cf-empty' }, j.plan === 'full' ? '돈 이야기나 확인 신호가 나온 말은 없었습니다.' : '대화 순서 정리는 정밀 분석에 들어 있습니다.'),
+    h('h2', {}, '3. 확인 신호 요약'),
+    sigItems.length ? h('ul', { class: 'cf-sig' }, sigItems.flatMap((i) => i.signals.map((s) => h('li', {},
+      h('b', {}, `${i.title} · ${s.title}`),
+      (s.evidence || []).slice(0, 2).map((e) => h('q', {}, quoteText(e))))))) : h('p', { class: 'cf-empty' }, '확인 신호가 없었습니다.'),
+    h('h2', {}, '4. 송금 기록'),
+    h('p', { class: 'cf-hint' }, '보낸 돈이 있다면 직접 적어 주세요.'),
+    h('table', { class: 'cf-tb' }, h('thead', {}, h('tr', {}, ['날짜', '금액', '받는 계좌·은행', '보낸 방법'].map((t) => h('th', {}, t)))),
+      h('tbody', {}, [0, 1, 2, 3].map(() => h('tr', {}, [0, 1, 2, 3].map(() => h('td', {})))))),
+    h('h2', {}, '5. 함께 낼 자료'),
+    h('ul', { class: 'cf-check' }, ['대화 캡처 원본 (지우지 말고 그대로)', '상대 프로필 화면 캡처', '송금 내역·이체 확인증', '받은 링크와 사이트 화면 캡처', '이 정리본'].map((t) => h('li', {}, t))),
+    h('h2', {}, '6. 신고·상담처'),
+    h('ul', { class: 'cf-to' }, (j.reportTo || []).map((x) => h('li', {}, h('b', {}, x.name), h('span', {}, x.text), x.url ? h('small', {}, x.url) : null))));
+  const close = () => { box.remove(); document.body.classList.remove('cf-open'); prev?.focus?.(); };
+  const prev = document.activeElement;
+  const box = h('div', { class: 'cf', role: 'dialog', 'aria-modal': 'true', 'aria-label': '신고용 정리본' },
+    h('div', { class: 'cf-bar' }, h('b', {}, '신고용 정리본'),
+      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => { track('casefile_print'); window.print(); } }, '인쇄·PDF 저장'),
+      h('button', { class: 'zm-x', type: 'button', 'aria-label': '닫기', onclick: () => close() }, '×')),
+    h('div', { class: 'cf-scroll' }, doc));
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  document.body.append(box);
+  document.body.classList.add('cf-open');
+  glueText(box);
+  wrapText(box);
+  $('.zm-x', box).focus();
 }
 
 let countdownTimer = null;
@@ -1266,7 +1424,7 @@ async function showReport(id) {
   if (!j) {
     const s = storedReport(id);
     if (!s) {
-      error = '리포트는 서버에 저장하지 않고 검증한 기기에만 24시간 보관합니다. 다른 기기이거나 보관 시간이 지났다면 새로 검증해 주세요.';
+      error = '리포트는 서버에 저장하지 않고 점검한 기기에만 24시간 보관합니다. 다른 기기이거나 보관 시간이 지났다면 새로 점검해 주세요.';
     } else {
       try {
         const r = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token }) });
@@ -1285,12 +1443,13 @@ async function showReport(id) {
     view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' },
       h('h1', {}, '리포트를 열 수 없습니다'),
       h('p', { class: 'w' }, error),
-      h('button', { class: 'btn btn-rose', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새로 검증하기'))));
+      h('button', { class: 'btn btn-rose', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새로 점검하기'))));
     glueText(view);
     wrapText(view);
     return;
   }
 
+  OFFER = j.offers || {};
   const t = j.totals;
   const items = j.items;
   const pending = items.filter((i) => i.status === 'pending').length;
@@ -1321,7 +1480,7 @@ async function showReport(id) {
       h('p', { class: 'rp-eyebrow' }, 'DATE CHECK REPORT'),
       h('h1', { class: 'rp-title' }, t.signals ? ['확인 신호 ', h('b', {}, String(t.signals)), '건'] : '확인 신호를 찾지 못했습니다'),
       h('div', { class: 'rp-meta' },
-        h('span', {}, `${when.getFullYear()}.${pad2(when.getMonth() + 1)}.${pad2(when.getDate())} ${pad2(when.getHours())}:${pad2(when.getMinutes())} 검증`),
+        h('span', {}, `${when.getFullYear()}.${pad2(when.getMonth() + 1)}.${pad2(when.getDate())} ${pad2(when.getHours())}:${pad2(when.getMinutes())} 점검`),
         h('span', {}, planLabel(j.plan)),
         left),
       h('div', { class: 'rp-stats' },
@@ -1332,6 +1491,7 @@ async function showReport(id) {
     h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
       h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '분석 결과는 상대방의 신원·안전성을 보증하지 않습니다.'), ' 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
       j.meta?.notes?.length ? h('p', { class: 'rp-notes' }, j.meta.notes.join(' ')) : null,
+      timelineSec(j),
       sec('확인 신호가 있는 항목', group('signal'), '사기에서 자주 보이는 흔적입니다. 근거를 직접 읽어 보세요.'),
       sec('참고할 항목', group('note'), '이것만으로 판단할 수는 없지만 알아 두면 좋은 내용입니다.'),
       sec('특이사항 없는 항목', group('clear'), '찾지 못했다는 뜻이며, 안전하다는 뜻은 아닙니다.'),
@@ -1343,9 +1503,11 @@ async function showReport(id) {
           ? h('a', { href: o.url, class: 'off-guide', onclick: (e) => { e.preventDefault(); track('official_click'); openHowto(o, null); } }, h('b', {}, o.label), h('span', { class: 'w' }, o.text), h('em', {}, '어디에 검색하는지 보기'))
           : h('a', { href: o.url, target: '_blank', rel: 'noopener noreferrer', onclick: () => track('official_click') }, h('b', {}, o.label), h('span', { class: 'w' }, o.text)))))),
       h('section', { class: 'rp-sec' }, h('div', { class: 'sent-box' }, h('h3', {}, '이미 돈을 보냈다면'), h('ol', {}, (j.ifSent || []).map((x) => h('li', {}, x))))),
+      casefileSec(j),
+      recheckSec(j),
       h('div', { class: 'rp-actions' },
         h('button', { class: 'btn btn-navy', type: 'button', onclick: () => window.print() }, 'PDF로 저장'),
-        h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새 검증 시작')))),
+        h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새 점검 시작')))),
   );
   glueText(view);
   wrapText(view);
@@ -1399,8 +1561,9 @@ function openPrivacy() {
   sheet(h('h2', {}, '개인정보 처리 안내'),
     ...[
       '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 저장하지 않고 파기합니다.',
-      '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 검증한 기기에만 24시간 보관하고 자동으로 지웁니다.',
-      'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
+      '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 점검한 기기에만 24시간 보관하고 자동으로 지웁니다.',
+      'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 사진 도용 확인을 위해 사진을 구글 Cloud Vision 웹 검색으로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
+      '공개 글 검색은 저희가 대신 하지 않습니다. 네이버 버튼을 누르면 이용자 브라우저에서 네이버 검색 결과가 열립니다.',
       '성범죄자 공개정보와 범죄경력 정보는 저장하지 않습니다.',
       '관리자 화면에서도 원본 개인정보는 볼 수 없고, 관리자 접속은 기록으로 남습니다.',
     ].map((t) => h('p', { class: 'w' }, t)));
@@ -1410,7 +1573,7 @@ function openPrivacy() {
 async function boot() {
   purgeReports();
   try {
-    CONFIG = await (await fetch('/api/config')).json();
+    CONFIG = await (await fetch(`/api/config?v=${visitor}`, { headers: { 'x-visitor': visitor } })).json();
   } catch { /* 설정 없이도 첫 화면은 뜬다 */ }
   initLanding();
   renderCheckGrid();

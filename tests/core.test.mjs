@@ -4,15 +4,40 @@ import assert from 'node:assert/strict';
 import { ruleSignals, maskOwnLines } from '../lib/rules.mjs';
 import { BANNED } from '../lib/ai.mjs';
 import { parsePhone, parseHost, extractUrls, claimedYears, lookalike, bizChecksumOk, snsHandle } from '../lib/sources.mjs';
-import { CHECKS, cleanInput } from '../lib/analyze.mjs';
+import { CHECKS, cleanInput, buildTimeline, reportOf } from '../lib/analyze.mjs';
+import { priceFor, PRICE_VARIANTS } from '../lib/store.mjs';
 import { parseSns, idInText, companyName, nameInTitle } from '../public/parse-input.js';
 
 const items = (text) => ruleSignals(text).map((s) => `${s.item}:${s.key}`);
 
-test('13개 항목, 번호 1~13, 요금제 둘', () => {
+test('13개 항목, 번호 1~13, 무료 점검·정밀 분석 둘', () => {
   assert.equal(CHECKS.length, 13);
   assert.deepEqual(CHECKS.map((c) => c.no), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-  assert.ok(CHECKS.every((c) => ['standard', 'full'].includes(c.plan)));
+  assert.ok(CHECKS.every((c) => ['free', 'full'].includes(c.plan)));
+  // 대화·사진만 정밀 분석
+  assert.deepEqual(CHECKS.filter((c) => c.plan === 'full').map((c) => c.id), ['money', 'invest', 'privacy', 'avoid', 'mismatch', 'photo']);
+});
+
+test('정밀 분석 가격 시험: 같은 방문자는 늘 같은 가격, 가격은 정해 둔 셋 중 하나', () => {
+  assert.equal(priceFor('abcdef1234'), priceFor('abcdef1234'));
+  const seen = new Set(['a1b2c3d4e5', 'ffff00001111', '0123456789ab', 'zzzz9999yyyy', 'q1w2e3r4t5y6', 'm9n8b7v6c5x4'].map(priceFor));
+  for (const p of seen) assert.ok(PRICE_VARIANTS.includes(p));
+  assert.equal(priceFor('<script>'), PRICE_VARIANTS[0]);
+});
+
+test('대화 순서 정리: 상대 말만, 처음 돈 이야기 표시, 무료 점검에서는 잠금', () => {
+  const chat = '상대: 안녕\n나: 300만원 보낼게\n상대: 해외 파견 중이라 영상통화는 어려워\n상대: 수수료 50만원을 먼저 보내야 해';
+  const items = [{ id: 'money', signals: [{ title: '먼저 내라는 말', evidence: [{ match: '수수료 50만원을 먼저 보내야' }] }] }];
+  const tl = buildTimeline(chat, items);
+  assert.equal(tl.total, 4);
+  assert.ok(tl.rows.every((r) => !r.text.includes('보낼게')), '나: 줄은 빼야 함');
+  assert.equal(tl.rows.find((r) => r.firstMoney).n, 4);
+  const result = { items: [], totals: {}, meta: { notes: [] }, timeline: tl, subject: { phone: '010-0000-0000' } };
+  assert.equal(reportOf(result, 'free').timeline.locked, true);
+  assert.equal(reportOf(result, 'standard').plan, 'free');
+  assert.equal(reportOf(result, 'full').timeline.rows.length, tl.rows.length);
+  assert.equal(reportOf(result, 'full').casefile, null);
+  assert.equal(reportOf(result, 'full', { casefile: true }).casefile.subject.phone, '010-0000-0000');
 });
 
 test('로맨스스캠 대화에서 항목별 신호를 찾는다', () => {

@@ -38,7 +38,7 @@ const NAV = `<header class="nav solid" id="nav">
         <a href="/#guides">확인 가이드</a>
         <a href="/#pricing">요금</a>
       </nav>
-      <a class="btn btn-rose btn-sm" href="/?start=1">검증 시작</a>
+      <a class="btn btn-rose btn-sm" href="/?start=1">무료 점검</a>
       <button class="nav-burger" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mnav"><span></span><span></span><span></span></button>
     </div>
   </header>
@@ -47,7 +47,7 @@ const NAV = `<header class="nav solid" id="nav">
     <a href="/#process">진행 방식</a>
     <a href="/#guides">확인 가이드</a>
     <a href="/#pricing">요금</a>
-    <a class="btn btn-rose" href="/?start=1">무료 사전분석 시작</a>
+    <a class="btn btn-rose" href="/?start=1">무료 점검 시작</a>
   </nav>`;
 
 const FOOT = `<footer class="foot">
@@ -148,8 +148,8 @@ function guidePage(g) {
         </section>
         <aside class="g-cta">
           <p class="g-cta-t">상대에게 받은 정보로 한 번에 확인하세요</p>
-          <p class="w">전화번호, 사진, 대화, 링크를 넣으면 13개 항목을 AI와 공식 데이터로 교차검증합니다.</p>
-          <a class="btn btn-rose" href="/?start=1">무료 사전분석 시작</a>
+          <p class="w">받은 대화, 링크, 계좌, 사진을 넣으면 13개 항목을 살펴 확인 신호를 근거와 함께 짚어 드립니다.</p>
+          <a class="btn btn-rose" href="/?start=1">무료 점검 시작</a>
         </aside>
       </div>
       <section class="g-more" aria-labelledby="more-title">
@@ -201,8 +201,8 @@ const between = (html, tag, body) => {
   if (!html.includes(a) || !html.includes(b)) throw new Error(`index.html 에 ${a} 표식이 없음`);
   return html.slice(0, html.indexOf(a) + a.length) + body + html.slice(html.indexOf(b));
 };
-const homeTitle = 'DATE CHECK · 만나기 전, 확인하세요.';
-const homeDesc = '상대에게 받은 정보를 AI와 공식 데이터로 교차검증해 사칭·사진도용·금전요구·사기 관련 확인 신호를 찾아드립니다.';
+const homeTitle = 'DATE CHECK · 받은 메시지·송금 요청 안전 점검';
+const homeDesc = '카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 무료 점검부터 시작하세요.';
 idx = between(idx, 'SEO', `
   <link rel="canonical" href="${SITE}/">
   <meta property="og:type" content="website">
@@ -224,11 +224,11 @@ idx = between(idx, 'GUIDES', `
           <div class="sec-head rv">
             <p class="eyebrow">확인 가이드</p>
             <h2 id="guides-title">혼자 먼저 확인해 볼 수도 있습니다</h2>
-            <p class="w">공식 조회 사이트와 확인하는 순서를 정리했습니다. 한 번에 확인하려면 무료 사전분석을 이용하세요.</p>
+            <p class="w">공식 조회 사이트와 확인하는 순서를 정리했습니다. 한 번에 확인하려면 무료 점검을 이용하세요.</p>
           </div>
           <div class="g-cards g-cards-home">${GUIDES.map((g) => `
             <a class="g-card rv" href="/guide/${g.slug}"><img src="${cardImg(g)}" alt="${esc(g.name)}" width="800" height="800" loading="lazy"><span>${glue(g.name)}</span></a>`).join('')}
-            <div class="g-card g-card-cta rv"><b>한 번에 확인하기</b><small>받은 정보를 넣으면 13개 항목을 교차검증합니다.</small><button class="btn btn-rose btn-sm" type="button" data-open-wizard>무료 사전분석 시작</button></div>
+            <div class="g-card g-card-cta rv"><b>한 번에 확인하기</b><small>받은 메시지와 정보를 넣으면 13개 항목을 살펴봅니다.</small><button class="btn btn-rose btn-sm" type="button" data-open-wizard>무료 점검 시작</button></div>
           </div>
         </div>
       </section>

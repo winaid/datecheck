@@ -2,7 +2,7 @@
   "name": "date-check",
   "version": "0.1.0",
   "private": true,
-  "description": "DATE CHECK — AI 데이트·사기 안전검증 서비스 MVP (기획서 DATE_CHECK_MVP_개발자전달용_최종.docx 기준)",
+  "description": "DATE CHECK — 받은 메시지·송금 요청 안전 점검 MVP (기획서 DATE_CHECK_MVP_개발자전달용_최종.docx 기준)",
   "type": "module",
   "scripts": {
     "start": "node dev.mjs",
