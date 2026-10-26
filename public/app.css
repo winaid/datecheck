@@ -539,7 +539,19 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .it.pending::before { background: #b9c1cc; }
 .it-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
 .it-no { font-size: 13px; font-weight: 800; color: var(--rose); font-variant-numeric: tabular-nums; }
-.it h3 { font-size: 20px; font-weight: 850; flex: 1 1 auto; }
+.it h3 { font-size: 20px; font-weight: 850; flex: 0 1 auto; }
+.it-top .chip-st { margin-left: auto; }
+.it-in { flex: none; font: inherit; font-size: 13px; font-weight: 700; color: var(--navy-600); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.it-in:hover { border-color: var(--navy-600); }
+.in-img { display: block; width: 100%; max-height: 66vh; object-fit: contain; border-radius: 12px; margin: 0 0 12px; background: #f4f6fa; }
+.in-dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0 0 14px; font-size: 15.5px; }
+.in-dl dt { color: var(--sub); }
+.in-dl dd { margin: 0; font-weight: 700; white-space: pre-line; overflow-wrap: anywhere; }
+.in-lbl { font-size: 13px; font-weight: 800; color: var(--sub); margin: 4px 0 6px; }
+.in-chat { white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f5f1; border-radius: 12px; padding: 14px 16px; font-size: 15px; line-height: 1.7; max-height: 50vh; overflow-y: auto; }
+.sheet-btns { display: flex; gap: 8px; }
+.sheet-btns .btn { flex: 1 1 0; }
+.rp-example { margin-bottom: 16px; }
 .it .tags { margin: 6px 0 14px; }
 .sg { border-top: 1px solid #f0f1f3; padding: 16px 0 6px; }
 .sg-t { display: flex; gap: 10px; align-items: baseline; font-size: 17px; font-weight: 750; margin-bottom: 4px; }
@@ -595,7 +607,7 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 @media print {
-  .nav, .foot, .rp-actions, .it-links, .toast, .sheet, .wz { display: none !important; }
+  .nav, .foot, .rp-actions, .it-links, .it-in, .toast, .sheet, .wz { display: none !important; }
   .rp-head { color: #000; background: #fff; padding-top: 20px; }
   .rp-head::before, .rp-head::after { display: none; }
   .rp-stats > div { border-color: #ddd; }

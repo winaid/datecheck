@@ -891,7 +891,7 @@ const STEPS = {
       h('dt', {}, x.label), h('dd', {}, mask[x.key]?.() || ''),
       h('button', { type: 'button', class: 'link-btn', onclick: () => go(W.steps.indexOf(x.key), -1) }, '수정')));
     const ids = exactIds();
-    const boxes = ['상대방에게 직접 받은 정보만 입력했습니다.', '분석이 끝나면 입력한 원본이 자동으로 삭제되는 것을 확인했습니다.'].map((t, k) => h('label', { class: 'consent' },
+    const boxes = ['상대방에게 직접 받은 정보만 입력했습니다.', '분석이 끝나면 서버에서 원본을 지우고, 리포트에서 다시 볼 수 있게 이 기기에만 24시간 보관하는 것을 확인했습니다.'].map((t, k) => h('label', { class: 'consent' },
       h('input', { type: 'checkbox', checked: W.consent[k], onchange: (e) => { W.consent[k] = e.target.checked; } }), h('span', {}, t)));
     // 생성형 AI 사전 고지(AI기본법 제31조 제1항, 2026-01-22 시행) — 대화·사진을 고른 경우에만 AI 를 쓰므로 그때 보여 준다
     const usesAi = W.sel.has('chat') || W.sel.has('photo');
@@ -1025,6 +1025,7 @@ const STEPS = {
 async function payAndOpen(body) {
   const j = await api('/api/pay', { body });
   keepReport(j);
+  await saveInputs(j.id, j.expiresAt, inputSnapshot());
   resetWizard();
   closeWizard();
   navigate(`/report/${j.id}`);
@@ -1089,7 +1090,7 @@ function navigate(path) {
 addEventListener('popstate', route);
 
 function route() {
-  const m = location.pathname.match(/^\/report\/([A-Za-z0-9_-]{8,20})$/);
+  const m = location.pathname.match(/^\/report\/(example|[A-Za-z0-9_-]{8,20})$/);
   const landing = $('#landing');
   const view = $('#report-view');
   if (m) {
@@ -1305,6 +1306,7 @@ function itemCard(it, id) {
     h('div', { class: 'it-top' },
       h('span', { class: 'it-no' }, pad2(it.no)),
       h('h3', {}, glue(it.title)),
+      it.locked ? null : inputBtn(it),
       h('span', { class: `chip-st ${cls}` }, txt)),
     h('div', { class: 'tags' }, (it.sources || []).filter((s) => !['더치트 API', '공개 웹 언급'].includes(s)).map((s) => h('span', {}, s)), ['phone', 'account'].includes(it.id) && (it.sources || []).includes('더치트 API') ? h('span', {}, '경찰민원24·더치트 직접 조회') : null, it.plan === 'full' ? h('span', {}, '정밀 분석') : null));
   if (it.locked) {
@@ -1383,8 +1385,115 @@ function purgeReports() {
   } catch { /* 없음 */ }
 }
 
+// ---------- 넣은 원본: 리포트에서 다시 볼 수 있게 이 기기에만(IndexedDB — 사진이 커서) 리포트와 같은 24시간. 서버로는 다시 보내지 않는다 ----------
+let inputDbP = null;
+function inputDb() {
+  if (!inputDbP) {
+    inputDbP = new Promise((ok, no) => {
+      try {
+        const r = indexedDB.open('datecheck', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('inputs');
+        r.onsuccess = () => ok(r.result);
+        r.onerror = () => no(r.error);
+        r.onblocked = () => no(new Error('blocked'));
+      } catch (e) { no(e); }
+    });
+  }
+  return inputDbP;
+}
+async function idb(mode, fn) {
+  const db = await inputDb();
+  return new Promise((ok, no) => {
+    const t = db.transaction('inputs', mode);
+    const req = fn(t.objectStore('inputs'));
+    t.oncomplete = () => ok(req?.result);
+    t.onerror = () => no(t.error);
+    t.onabort = () => no(t.error);
+  });
+}
+// 화면에 보여 줄 모양 그대로 — 링크 칸과 쇼핑몰 주소는 따로 둔다
+const inputSnapshot = () => ({ ...W.val(), url: W.sel.has('url') ? W.v.url.trim() : '', shopUrl: W.sel.has('shop') ? W.v.shopUrl.trim() : '' });
+const saveInputs = (id, exp, v) => idb('readwrite', (st) => st.put({ exp, v }, id)).catch(() => false);
+const deleteInputs = (id) => idb('readwrite', (st) => st.delete(id)).catch(() => false);
+async function loadInputs(id) {
+  try {
+    const r = await idb('readonly', (st) => st.get(id));
+    // 정밀 분석으로 올리면 리포트 보관 시간이 다시 24시간 — 리포트가 남아 있는 동안은 함께 보여 준다
+    if (r && (r.exp > Date.now() || storedReport(id))) return r.v;
+  } catch { /* 저장 막힘 */ }
+  return null;
+}
+function purgeInputs() {
+  idb('readwrite', (st) => {
+    const c = st.openCursor();
+    c.onsuccess = () => {
+      const cur = c.result;
+      if (!cur) return;
+      if (!(cur.value?.exp > Date.now()) && !storedReport(String(cur.key))) cur.delete();
+      cur.continue();
+    };
+    return c;
+  }).catch(() => {});
+}
+
+// 이 기기에서 리포트와 원본을 바로 지운다
+function askForget(id) {
+  const close = sheet(h('h2', {}, '이 기기에서 지울까요?'),
+    h('p', { class: 'w' }, '리포트와 넣은 원본(사진·대화·번호)을 이 기기에서 바로 지웁니다. 지우면 다시 열 수 없으니, 필요한 내용은 먼저 ‘PDF로 저장’으로 남겨 두세요.'),
+    h('div', { class: 'sheet-btns' },
+      h('button', { class: 'btn btn-line', type: 'button', onclick: () => close() }, '취소'),
+      h('button', {
+        class: 'btn btn-rose', type: 'button',
+        onclick: async () => { forgetReport(id); reportCache.delete(id); await deleteInputs(id); close(); toast('이 기기에서 지웠습니다'); navigate('/'); },
+      }, '지우기')));
+}
+
+// ---------- 넣은 정보 다시 보기 — 카드 제목 옆 버튼 → 작은 창 (2026-10-26 오너) ----------
+const EXAMPLE_ID = 'example';
+let REPORT_INPUTS = null;
+let REPORT_IS_EXAMPLE = false;
+const chatUrls = (t) => (String(t || '').match(URL_IN) || []).filter((u) => !isSnsUrl(u));
+const CHAT_VIEW = { label: '대화 보기', title: '넣은 대화', chat: true };
+const IN_VIEW = {
+  phone: { label: '번호 보기', title: '넣은 전화번호', rows: (v) => [['전화번호', v.phone]] },
+  account: { label: '계좌 보기', title: '넣은 계좌번호', rows: (v) => [['은행', v.bank], ['계좌번호', v.account]] },
+  money: CHAT_VIEW,
+  invest: CHAT_VIEW,
+  privacy: CHAT_VIEW,
+  avoid: CHAT_VIEW,
+  mismatch: { label: '대화·한 말 보기', title: '넣은 대화와 상대가 한 말', chat: true, rows: (v) => [['상대가 한 말', v.claims], ['회사명', v.company], ['직업', [v.job, v.workplace].filter(Boolean).join(', ')]] },
+  photo: { label: '사진 보기', title: '넣은 사진', photo: true },
+  link: { label: '링크 보기', title: '넣은 링크', rows: (v) => [['받은 링크', siteUrls(v.url).join('\n')], ['쇼핑몰 주소', siteUrls(v.shopUrl).join('\n')], ['대화 속 링크', chatUrls(v.chatText).join('\n')]] },
+  biz: { label: '번호 보기', title: '넣은 사업자등록번호', rows: (v) => [['사업자등록번호', v.biz ? fmtBiz(v.biz) : '']] },
+  commerce: { label: '넣은 정보 보기', title: '넣은 사업자 정보', rows: (v) => [['사업자등록번호', v.biz ? fmtBiz(v.biz) : ''], ['상호', v.shop], ['쇼핑몰 주소', siteUrls(v.shopUrl).join('\n')]] },
+  company: { label: '회사 보기', title: '넣은 회사·상호', rows: (v) => [['회사명', v.company], ['상호', v.shop]] },
+  job: { label: '직업 보기', title: '넣은 직업', rows: (v) => [['직업', v.job], ['근무하는 병원', v.workplace]] },
+};
+function inputParts(itemId, v) {
+  const view = IN_VIEW[itemId];
+  if (!view || !v) return null;
+  const rows = (view.rows?.(v) || []).filter(([, x]) => x);
+  const chat = view.chat && (v.chatText || v.chatImages?.length) ? v : null;
+  const photo = view.photo && v.photo ? v.photo : '';
+  return rows.length || chat || photo ? { view, rows, chat, photo } : null;
+}
+function inputBtn(it) {
+  const p = inputParts(it.id, REPORT_INPUTS);
+  if (!p) return null;
+  return h('button', { class: 'it-in', type: 'button', onclick: () => openInputs(p) }, p.view.label);
+}
+function openInputs({ view, rows, chat, photo }) {
+  sheet(h('h2', {}, view.title),
+    h('p', { class: 'w' }, REPORT_IS_EXAMPLE ? '예시 리포트에 쓴 시험용 자료입니다.' : '이 기기에만 리포트와 함께 24시간 보관합니다. 서버에는 저장하지 않습니다.'),
+    photo ? h('img', { class: 'in-img', src: photo, alt: '넣은 사진' }) : null,
+    rows.length ? h('dl', { class: 'in-dl' }, rows.map(([k, x]) => [h('dt', {}, k), h('dd', {}, x)])) : null,
+    chat?.chatText ? [h('p', { class: 'in-lbl' }, '대화'), h('div', { class: 'in-chat', tabindex: '0' }, chat.chatText)] : null,
+    chat?.chatImages?.length ? [h('p', { class: 'in-lbl' }, `대화 캡처 ${chat.chatImages.length}장`), chat.chatImages.map((src, k) => h('img', { class: 'in-img', src, alt: `대화 캡처 ${k + 1}` }))] : null);
+}
+
 // 무료 점검 → 정밀 분석, 신고용 정리본 추가 (시험판 결제)
 async function upgrade(id, addon) {
+  if (id === EXAMPLE_ID) { toast('예시 리포트에서는 쓸 수 없어요. 새로 점검하면 쓸 수 있어요.'); return; }
   const s = storedReport(id);
   if (!s) {
     toast(unsaved.has(id) ? '이 브라우저는 리포트를 저장하지 못해 추가할 수 없어요. 새로 점검해 주세요.' : '이 기기에 리포트가 없거나 보관 시간(24시간)이 지났어요. 새로 점검해 주세요.');
@@ -1503,7 +1612,19 @@ async function showReport(id) {
   let j = reportCache.get(id);
   let error = null;
   let canRetry = false;
-  if (!j) {
+  const example = id === EXAMPLE_ID;
+  if (!j && example) {
+    try {
+      const r = await fetch('/example-report.json', { cache: 'no-cache' });
+      if (!r.ok) throw new Error(String(r.status));
+      const d = await r.json();
+      j = { ...d.report, exampleInputs: d.inputs };
+      reportCache.set(id, j);
+    } catch {
+      error = '예시 리포트를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.';
+      canRetry = true;
+    }
+  } else if (!j) {
     const s = storedReport(id);
     if (!s) {
       error = '리포트는 서버에 저장하지 않고 점검한 기기에만 24시간 보관합니다. 다른 기기이거나 보관 시간이 지났다면 새로 점검해 주세요.';
@@ -1530,6 +1651,9 @@ async function showReport(id) {
     return;
   }
 
+  REPORT_IS_EXAMPLE = example;
+  REPORT_INPUTS = example ? j.exampleInputs : await loadInputs(id);
+  const canForget = !example && Boolean(storedReport(id) || REPORT_INPUTS);
   OFFER = j.offers || {};
   const t = j.totals;
   const items = j.items;
@@ -1541,6 +1665,7 @@ async function showReport(id) {
   const nP = h('b', {}, '0');
   const left = h('span', {});
   const paintLeft = () => {
+    if (example) { left.textContent = '예시 리포트'; return; }
     const ms = j.expiresAt - Date.now();
     if (ms <= 0) { left.textContent = '보관 시간이 지났습니다'; return; }
     left.textContent = `자동 삭제까지 ${Math.floor(ms / 3600000)}시간 ${Math.floor((ms % 3600000) / 60000)}분`;
@@ -1571,6 +1696,7 @@ async function showReport(id) {
         h('div', {}, nNote, h('span', {}, '참고')),
         h('div', {}, nP, h('span', {}, retrying ? '다시 확인할 항목' : '연동 준비 중 항목'))))),
     h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
+      example ? h('p', { class: 'notice w rp-example' }, h('b', {}, '예시 리포트입니다.'), ' 실제 사람이 아니라 시험용으로 꾸민 대화·번호·사진(모나리자)으로 만든 결과입니다. 카드 제목 옆 버튼을 누르면 넣은 정보를 볼 수 있습니다.') : null,
       h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '분석 결과는 상대방의 신원·안전성을 보증하지 않습니다.'), ' 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
       // .w 안의 span 은 wrap.js 가 다시 짜면서 표시 모양이 벗겨진다 → 따옴표 글자로
       hasAiText(items) ? h('p', { class: 'rp-ai w' }, '‘AI 생성’ 표시가 붙은 설명은 생성형 AI인 구글 제미나이가 작성했습니다. 근거 문장은 입력한 대화에 실제로 있는 문장만 보여 드리며, 캡처의 글자는 AI가 읽은 것이라 원본 캡처와 함께 확인하세요.') : null,
@@ -1593,7 +1719,8 @@ async function showReport(id) {
       recheckSec(j),
       h('div', { class: 'rp-actions' },
         h('button', { class: 'btn btn-navy', type: 'button', onclick: () => window.print() }, 'PDF로 저장'),
-        h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새 점검 시작')))),
+        h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, example ? '내 경우 점검하기' : '새 점검 시작'),
+        canForget ? h('button', { class: 'btn btn-line', type: 'button', onclick: () => askForget(id) }, '이 기기에서 지우기') : null))),
   );
   glueText(view);
   wrapText(view);
@@ -1654,7 +1781,7 @@ function openRequest() {
 function openPrivacy() {
   sheet(h('h2', {}, '개인정보 처리 안내'),
     ...[
-      '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 저장하지 않고 파기합니다.',
+      '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 서버에 저장하지 않고 파기합니다. 리포트에서 다시 볼 수 있도록 점검한 기기에만 리포트와 함께 24시간 보관하고 자동으로 지웁니다. 리포트 아래 ‘이 기기에서 지우기’로 바로 지울 수도 있습니다.',
       '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 점검한 기기에만 24시간 보관하고 자동으로 지웁니다.',
       'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 사진 도용 확인을 위해 사진을 구글 Cloud Vision 웹 검색으로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
       '대화·사진 분석에는 생성형 AI를 씁니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.',
@@ -1669,6 +1796,7 @@ function openPrivacy() {
 // =====================================================================
 async function boot() {
   purgeReports();
+  purgeInputs();
   // 설정 없이도 첫 화면은 뜬다 — 못 받았으면 3초·10초 뒤 다시 받아 검사 항목 칸을 채운다
   if (!(await loadConfig())) {
     for (const wait of [3000, 10000]) {
