@@ -33,8 +33,9 @@ const NAV = `<header class="nav solid" id="nav">
     <div class="nav-in">
       <a class="logo" href="/" aria-label="DATE CHECK 처음으로">${LOGO}</a>
       <nav class="nav-links" aria-label="주요 메뉴">
-        <a href="/#checks">검증 항목</a>
+        <a href="/#checks">점검 항목</a>
         <a href="/#process">진행 방식</a>
+        <a href="/#safety">안전 원칙</a>
         <a href="/#guides">확인 가이드</a>
         <a href="/#pricing">요금</a>
       </nav>

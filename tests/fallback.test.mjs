@@ -54,3 +54,16 @@ test("조회 서버가 응답하지 않은 칸만 남으면 '다시 확인 필�
   const clear = finalize(def, true, { pending: [busy('a', 'b', 'c')], facts: [{ text: '확인한 사실' }] });
   assert.equal(clear.status, 'clear');
 });
+
+test('사진 결과 — SNS 계정 페이지는 주소·제목을 보여 주지 않고 개수만 알린다', async () => {
+  const { photoMatches } = await import('../lib/analyze.mjs');
+  const pg = (url, title) => ({ url, host: new URL(url).hostname, title, full: true });
+  const mixed = photoMatches({ fullPages: [pg('https://www.instagram.com/p/abc/', '김민지 (@kim_minji) • Instagram'), pg('https://stock.example.com/photo/1', '모델 사진')], partialPages: [] });
+  assert.equal(mixed.signals[0].sources.length, 1);
+  assert.ok(!JSON.stringify(mixed).includes('kim_minji'));
+  assert.match(mixed.signals[0].text, /1곳은 SNS 계정이라 주소를 보여 드리지 않습니다/);
+  const allSns = photoMatches({ fullPages: [pg('https://www.facebook.com/x/photos/1', '홍길동')], partialPages: [] });
+  assert.equal(allSns.signals[0].sources.length, 0);
+  assert.match(allSns.signals[0].text, /모두 SNS 계정이라/);
+  assert.equal(photoMatches({ fullPages: [], partialPages: [] }).facts.length, 1);
+});

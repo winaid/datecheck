@@ -1,6 +1,6 @@
 // DATE CHECK 화면 — 첫 화면 연출, 팝업 단계 입력(STEP 1~6), 리포트(STEP 7~8)
 // 바깥에서 온 글(검색 결과·대화)은 반드시 textContent 로만 넣는다.
-import { parseSns, SNS_WHY, companyName } from '/parse-input.js';
+import { isSnsUrl, companyName } from '/parse-input.js';
 
 const $ =(s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -146,7 +146,7 @@ const NEED = {
   avoid: { need: '카톡·DM 대화', g: 'chat' },
   mismatch: { need: '대화와 상대가 한 말', g: 'chat' },
   photo: { need: '상대방 사진', g: 'photo' },
-  link: { need: 'URL 또는 SNS 주소', g: 'link' },
+  link: { need: '상대가 보낸 사이트 주소', g: 'link' },
   biz: { need: '사업자등록번호', g: 'biz' },
   commerce: { need: '사업자번호 또는 상호', g: 'biz' },
   company: { need: '회사명 또는 상호', g: 'biz' },
@@ -373,7 +373,6 @@ const INPUTS = [
   { key: 'photo', label: '상대방 사진', desc: '프로필 사진 한 장' },
   { key: 'account', label: '계좌번호', desc: '돈을 보내 달라고 한 계좌' },
   { key: 'url', label: '상대방이 보낸 URL', desc: '받은 링크, 투자·쇼핑 사이트' },
-  { key: 'sns', label: 'SNS 주소', desc: '인스타그램 같은 계정' },
   { key: 'company', label: '회사명·직업', desc: '다닌다고 한 회사와 직업' },
   { key: 'biz', label: '사업자등록번호', desc: '운영한다는 사업체 번호' },
   { key: 'shop', label: '쇼핑몰·사업체명', desc: '운영한다고 한 곳' },
@@ -384,7 +383,7 @@ const STEP_LABEL = { select: '받은 것 선택', confirm: '입력 확인', run:
 const BANKS = ['KB국민', '신한', '우리', '하나', 'NH농협', 'IBK기업', '카카오뱅크', '토스뱅크', '케이뱅크', '새마을금고', '우체국', '수협', '신협', 'SC제일', '부산', '경남', 'iM뱅크', '광주', '전북', '제주', '기타'];
 const CLAIM_HINTS = ['서울에 산다고 했어요', '해외에서 일한다고 했어요', '회사를 5년째 운영 중이라고 했어요', '돈이 급하다고 했어요'];
 
-const freshValues = () => ({ phone: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', photo: '', sns: '', url: '', company: '', job: '', workplace: '', biz: '', shop: '', shopUrl: '', claims: '' });
+const freshValues = () => ({ phone: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', photo: '', url: '', company: '', job: '', workplace: '', biz: '', shop: '', shopUrl: '', claims: '' });
 const W = { sel: new Set(), v: freshValues(), steps: ['select'], i: 0, consent: [false, false], id: null, preview: null, plan: 'full', opened: false, lastFocus: null };
 
 const digits = (s) => String(s || '').replace(/\D/g, '');
@@ -409,7 +408,10 @@ function bizOk(d) {
   s += Math.floor((Number(d[8]) * 5) / 10);
   return (10 - (s % 10)) % 10 === Number(d[9]);
 }
-const hasUrlIn = (t) => /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|kr|io|xyz|top|vip|co|me|app|site|shop)\b)/i.test(String(t || ''));
+// SNS·영상·블로그 주소는 확인하지 않는다(2026-10-26) — 사이트 주소만 센다
+const URL_IN = /(https?:\/\/\S+|www\.\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|kr|io|xyz|top|vip|co|me|app|site|shop)\b\S*)/gi;
+const hasUrlIn = (t) => (String(t || '').match(URL_IN) || []).some((u) => !isSnsUrl(u));
+const siteUrls = (t) => String(t || '').split(/[\s,]+/).filter((u) => /\.[a-z]{2,}/i.test(u) && !isSnsUrl(u));
 
 // 선택만 보고 어림한 검사 가능 항목 (STEP 4 미리 보기)
 function estimateIds() {
@@ -420,7 +422,7 @@ function estimateIds() {
   if (s('chat')) ids.push('money', 'invest', 'privacy', 'avoid');
   if (s('chat') && (s('claims') || s('company'))) ids.push('mismatch');
   if (s('photo')) ids.push('photo');
-  if (s('url') || s('sns') || s('shop')) ids.push('link');
+  if (s('url') || s('shop')) ids.push('link');
   if (s('biz')) ids.push('biz');
   if (s('biz') || s('shop')) ids.push('commerce');
   if (s('company') || s('shop')) ids.push('company');
@@ -437,7 +439,7 @@ function exactIds() {
   if (chat) ids.push('money', 'invest', 'privacy', 'avoid');
   if (chat && (v.claims || v.company || v.job)) ids.push('mismatch');
   if (v.photo) ids.push('photo');
-  if (v.url || v.sns || hasUrlIn(v.chatText)) ids.push('link');
+  if (siteUrls(v.url).length || hasUrlIn(v.chatText)) ids.push('link');
   if (v.biz) ids.push('biz');
   if (v.biz || v.shop) ids.push('commerce');
   if (v.company || v.shop) ids.push('company');
@@ -456,7 +458,6 @@ W.val = () => {
     chatText: on('chat') && v.chatMode === 'text' ? v.chatText.trim() : '',
     chatImages: on('chat') && v.chatMode === 'image' ? v.chatImages : [],
     photo: on('photo') ? v.photo : '',
-    sns: on('sns') ? v.sns.trim() : '',
     url: url.trim(),
     company: on('company') ? v.company.trim() : '',
     job: on('company') ? v.job : '',
@@ -697,7 +698,7 @@ const STEPS = {
     }, h('b', {}, x.label), h('span', {}, x.desc))));
     return {
       body: [...head('알고 있는 정보를 모두 골라 주세요', '많이 고를수록 검사할 수 있는 항목이 늘어납니다. 모든 정보를 넣을 필요는 없습니다.'), grid,
-        h('p', { class: 'wz-hint w' }, '이름은 받지 않습니다. 이름으로 사람을 찾는 일이 없도록 입력 칸을 두지 않았습니다.')],
+        h('p', { class: 'wz-hint w' }, '이름과 SNS 계정은 받지 않습니다. 사람을 찾는 일이 없도록 입력 칸을 두지 않았습니다.')],
       back: false,
       next: { label: '다음', ok: () => W.sel.size > 0, go: () => { buildSteps(); next(); } },
     };
@@ -785,28 +786,10 @@ const STEPS = {
       body: [...head('상대방이 보낸 링크를 넣어 주세요', '투자 사이트, 쇼핑몰, 받은 링크를 넣어 주세요. 여러 개면 줄을 바꿔 적습니다.'),
         field('링크', textarea('url', { class: 'inp sm', placeholder: 'https://', spellcheck: 'false' }), h('p', { class: 'fld-help' }, '사이트에 직접 접속하지 않고 공개된 등록 정보만 확인합니다.'))],
       skip: true,
-      next: { label: '다음', ok: () => /\.[a-z]{2,}/i.test(W.v.url), why: () => (W.v.url.trim() ? '링크 모양이 아니에요. example.com처럼 점(.)이 들어간 주소를 넣어 주세요.' : ''), go: next },
-    };
-  },
-
-  sns() {
-    // 주소·@아이디·'인스타 아이디' 어떻게 적어도 찾을 아이디를 바로 보여 준다 (public/parse-input.js)
-    const help = h('p', { class: 'fld-help', 'aria-live': 'polite' });
-    const el = input('sns', { placeholder: 'instagram.com/아이디 또는 @아이디', spellcheck: 'false' });
-    const paint = () => {
-      const r = parseSns(W.v.sns);
-      help.className = 'fld-help';
-      if (r.why === 'empty') help.textContent = '프로필 주소를 붙여 넣거나 아이디만 적어도 됩니다.';
-      else if (r.id) { help.textContent = `${r.siteName || 'SNS'} 아이디 ${r.id}, 이대로 찾습니다.`; help.classList.add('fld-ok'); }
-      else { help.textContent = SNS_WHY[r.why]; help.classList.add(r.why === 'site' ? 'fld-ok' : 'fld-bad'); }
-    };
-    el.addEventListener('input', paint);
-    paint();
-    return {
-      body: [...head('SNS 주소를 입력해 주세요', '인스타그램 주소나 아이디를 넣어 주세요.'),
-        field('SNS 주소 또는 아이디', el, help)],
-      skip: true,
-      next: { label: '다음', ok: () => { const r = parseSns(W.v.sns); return Boolean(r.id) || r.why === 'site'; }, go: next },
+      next: {
+        label: '다음', ok: () => siteUrls(W.v.url).length > 0, go: next,
+        why: () => (!W.v.url.trim() ? '' : W.v.url.split(/[\s,]+/).some(isSnsUrl) ? 'SNS·유튜브·블로그 주소는 확인하지 않아요. 투자·쇼핑 사이트처럼 상대가 보낸 사이트 주소를 넣어 주세요.' : '링크 모양이 아니에요. example.com처럼 점(.)이 들어간 주소를 넣어 주세요.'),
+      },
     };
   },
 
@@ -863,10 +846,13 @@ const STEPS = {
   },
 
   shop() {
+    const shopUrl = input('shopUrl', { placeholder: '있으면 넣어 주세요', spellcheck: 'false' });
+    const shopHelp = h('p', { class: 'fld-help fld-bad', hidden: !isSnsUrl(W.v.shopUrl) }, 'SNS·블로그 주소는 확인하지 않아요. 쇼핑몰 사이트 주소가 있으면 넣어 주세요.');
+    shopUrl.addEventListener('input', () => { shopHelp.hidden = !isSnsUrl(W.v.shopUrl); });
     return {
       body: [...head('쇼핑몰이나 사업체 이름을 알려 주세요', '주소까지 알면 신고 여부와 사이트를 만든 날짜를 함께 확인합니다.'),
         field('상호', input('shop', { placeholder: '○○몰' })),
-        field('쇼핑몰 주소', input('shopUrl', { placeholder: '있으면 넣어 주세요', spellcheck: 'false' }))],
+        field('쇼핑몰 주소', shopUrl, shopHelp)],
       skip: true,
       next: { label: '다음', ok: () => W.v.shop.trim().length >= 1, go: next },
     };
@@ -879,7 +865,9 @@ const STEPS = {
       onclick: () => { W.v.claims = [W.v.claims.trim(), c].filter(Boolean).join('\n'); ta.value = W.v.claims; ta.focus(); W.refresh(); },
     }, `+ ${c}`)));
     return {
-      body: [...head('상대가 자기에 대해 한 말을 적어 주세요', '사는 곳, 직업, 경력, 운영 기간처럼 확인하고 싶은 말을 적어 주세요. 대화와 맞는지 비교합니다.'), chips, ta],
+      body: [...head('상대가 자기에 대해 한 말을 적어 주세요', '사는 곳, 직업, 경력, 운영 기간처럼 확인하고 싶은 말을 적어 주세요. 대화와 맞는지 비교합니다.'), chips, ta,
+        // 최소 수집 — 비교에 필요 없는 이름·연락처·계정은 적지 않게(2026-10-26)
+        h('p', { class: 'fld-help' }, '이름, 연락처, SNS 아이디는 적지 않아도 됩니다. 비교에 쓰지 않습니다.')],
       skip: true,
       focus: ta,
       next: { label: '다음', ok: () => W.v.claims.trim().length >= 2, why: () => (W.v.claims.trim() ? '두 글자 이상 적어 주세요.' : ''), go: next },
@@ -893,11 +881,10 @@ const STEPS = {
       chat: () => (v.chatImages.length ? `캡처 ${v.chatImages.length}장` : `글 ${v.chatText.length.toLocaleString('ko-KR')}자`),
       photo: () => '사진 1장',
       account: () => `${v.bank ? `${v.bank} ` : ''}****${v.account.slice(-4)}`,
-      url: () => W.v.url.split(/\s+/).filter(Boolean).join(', '),
-      sns: () => v.sns,
+      url: () => siteUrls(W.v.url).join(', '),
       company: () => [v.company, v.job, v.workplace].filter(Boolean).join(', '),
       biz: () => fmtBiz(v.biz),
-      shop: () => [v.shop, W.v.shopUrl].filter(Boolean).join(', '),
+      shop: () => [v.shop, isSnsUrl(W.v.shopUrl) ? '' : W.v.shopUrl].filter(Boolean).join(', '),
       claims: () => (v.claims.length > 30 ? `${v.claims.slice(0, 30)}…` : v.claims),
     };
     const rows = INPUTS.filter((x) => W.sel.has(x.key)).map((x) => h('div', { class: 'sum-row' },
@@ -1466,7 +1453,7 @@ function openCasefile(j) {
   const cf = j?.casefile;
   if (!cf) return;
   const sub = cf.subject || {};
-  const info = [['전화번호', sub.phone], ['계좌', sub.account], ['SNS', sub.sns], ['사이트 주소', sub.url], ['회사·상호', sub.company], ['사업자등록번호', sub.biz], ['직업·근무처', sub.job], ['상대가 한 말', sub.claims]].filter(([, v]) => v);
+  const info = [['전화번호', sub.phone], ['계좌', sub.account], ['사이트 주소', sub.url], ['회사·상호', sub.company], ['사업자등록번호', sub.biz], ['직업·근무처', sub.job], ['상대가 한 말', sub.claims]].filter(([, v]) => v);
   const sigItems = (j.items || []).filter((i) => i.checkable && !i.locked && (i.signals || []).length);
   const rows = j.timeline && !j.timeline.locked ? j.timeline.rows : [];
   const quoteText = (e) => `${e.before || ''}${e.match || ''}${e.after || ''}`;
@@ -1671,7 +1658,8 @@ function openPrivacy() {
       '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 점검한 기기에만 24시간 보관하고 자동으로 지웁니다.',
       'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 사진 도용 확인을 위해 사진을 구글 Cloud Vision 웹 검색으로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
       '대화·사진 분석에는 생성형 AI를 씁니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.',
-      '분석 서버는 서울 지역에서 돌아갑니다. 이름은 분석에 쓰지 않아 입력받지 않습니다.',
+      '분석 서버는 서울 지역에서 돌아갑니다. 이름과 SNS 계정은 사람을 찾는 데 쓰일 수 있어 입력받지 않습니다.',
+      '사업자등록번호·회사 이름·병원 이름은 국세청·공정거래위원회·금융위원회·건강보험심사평가원의 공개 조회 서비스(공공데이터포털)로 확인합니다. 조회한 내용은 저장하지 않습니다.',
       '공개 글 검색은 저희가 대신 하지 않습니다. 네이버 버튼을 누르면 이용자 브라우저에서 네이버 검색 결과가 열립니다.',
       '성범죄자 공개정보와 범죄경력 정보는 저장하지 않습니다.',
       '관리자 화면에서도 원본 개인정보는 볼 수 없고, 관리자 접속은 기록으로 남습니다.',

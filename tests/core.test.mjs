@@ -3,10 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ruleSignals, maskOwnLines } from '../lib/rules.mjs';
 import { BANNED } from '../lib/ai.mjs';
-import { parsePhone, parseHost, extractUrls, claimedYears, lookalike, bizChecksumOk, snsHandle } from '../lib/sources.mjs';
+import { parsePhone, parseHost, extractUrls, claimedYears, lookalike, bizChecksumOk, siteUrlsIn } from '../lib/sources.mjs';
 import { CHECKS, cleanInput, buildTimeline, reportOf } from '../lib/analyze.mjs';
 import { priceFor, PRICE_VARIANTS } from '../lib/store.mjs';
-import { parseSns, idInText, companyName, nameInTitle } from '../public/parse-input.js';
+import { isSnsUrl, companyName } from '../public/parse-input.js';
 
 const items = (text) => ruleSignals(text).map((s) => `${s.item}:${s.key}`);
 
@@ -77,35 +77,17 @@ test('번호·주소·사업자', () => {
   assert.equal(claimedYears('8년째 운영 중'), 8);
   assert.equal(bizChecksumOk('1248100998'), true);
   assert.equal(bizChecksumOk('1248100999'), false);
-  assert.equal(snsHandle('https://instagram.com/abc_123/'), 'abc_123');
-  assert.equal(snsHandle('@abc_123'), 'abc_123');
 });
 
-test('SNS 입력 — 어떻게 적어도 같은 아이디, 게시물 주소·한글 말은 아이디로 쓰지 않는다', () => {
-  for (const s of ['instagram.com/kim_minji', '@kim_minji', 'https://www.instagram.com/kim_minji?igsh=MWx5', 'https://m.instagram.com/kim_minji/', 'instagr.am/kim_minji',
-    'https://www.instagram.com/stories/kim_minji/3412/', '인스타 kim_minji', '인스타그램: @kim_minji', 'kim_minji (인스타)', 'https://www.threads.com/@kim_minji',
-    'https://www.tiktok.com/@kim_minji', 'https://www.instagram.com/accounts/login/?next=/kim_minji/']) assert.equal(parseSns(s).id, 'kim_minji', s);
-  assert.equal(parseSns('https://www.linkedin.com/in/minji-kim-123/').id, 'minji-kim-123');
-  assert.equal(parseSns('카톡 아이디 minji77').id, 'minji77');
-  assert.equal(parseSns('https://www.instagram.com/p/C8xYzAbc123/').why, 'post');
-  assert.equal(parseSns('https://www.instagram.com/reel/C8xYzAbc123/').why, 'post');
-  assert.equal(parseSns('민지짱').why, 'nickname');
-  assert.equal(parseSns('https://upbit-event.xyz/join').why, 'site');
-  // 아이디는 따로 떨어진 낱말일 때만, 흔한 낱말 같은 아이디는 SNS 말이 같이 있을 때만
-  assert.ok(idInText('kim_minji', '인스타 kim_minji 사기 조심하세요'));
-  assert.ok(!idInText('kim_minji', 'kim_minji2 계정 사기'));
-  assert.ok(!idInText('minji', '민지 minji 사기 피해'));
-  assert.ok(idInText('minji', '인스타 @minji 사기 피해'));
+test('SNS·영상·블로그 주소는 확인하지 않는다 — 링크 칸·대화에서 걸러 낸다(2026-10-26)', () => {
+  for (const u of ['instagram.com/kim_minji', 'https://www.instagram.com/p/C8x/', 'https://m.facebook.com/x', 'https://www.threads.com/@a', 'youtu.be/abc', 'https://www.youtube.com/watch?v=1', 'https://m.blog.naver.com/abc/1', 'https://open.kakao.com/o/abc', 'x.com/abc']) assert.ok(isSnsUrl(u), u);
+  for (const u of ['https://upbit-event.xyz/join', 'coupang.com', 'naver.com', 'cafe.naver.com/abc', 'instagram-event.top']) assert.ok(!isSnsUrl(u), u);
+  assert.deepEqual(siteUrlsIn('투자 https://abc.top/x 가입하고 인스타 https://instagram.com/kim 봐'), ['https://abc.top/x']);
 });
 
-test('회사 입력 — (주)·주식회사·뒤에 붙인 말을 떼고, 다른 회사 이름 안에서는 잡지 않는다', () => {
+test('회사 입력 — (주)·주식회사·뒤에 붙인 말을 뗀다', () => {
   for (const s of ['브이글로벌', '(주)브이글로벌', '주식회사 브이글로벌', '㈜브이글로벌', '브이글로벌 다녀요', '브이글로벌에서 일한대요']) assert.equal(companyName(s), '브이글로벌', s);
   assert.equal(companyName('Samsung Electronics Co., Ltd.'), 'Samsung Electronics');
-  assert.ok(nameInTitle('브이글로벌', '[단독] 브이 글로벌 사기 피해 2조'));
-  assert.ok(nameInTitle('브이글로벌', '(주)브이글로벌사기 피해자 모임'));
-  assert.ok(nameInTitle('카카오', '카카오 사칭 문자 주의'));
-  assert.ok(!nameInTitle('카카오', '카카오톡으로 온 사기 문자'));
-  assert.ok(!nameInTitle('카카오', '카카오페이증권 사칭 피해'));
 });
 
 test('전화번호 — + 없이 82부터 적어도 국내 번호로 읽는다', () => {
