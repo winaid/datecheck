@@ -29,7 +29,7 @@ const won = (n) => (n == null ? '—' : `${Math.round(n).toLocaleString('ko-KR')
 const pct = (r) => (r == null ? '—' : `${(r * 100).toFixed(r < 0.1 ? 1 : 0)}%`);
 const num = (n) => (n || 0).toLocaleString('ko-KR');
 const time = (t) => { const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const API_NAME = { naver: '네이버 검색 (예전 기록, 지금은 쓰지 않음)', vision: '구글 Vision 사진 웹 검색', whois: 'KISA WHOIS · RDAP', gemini: '제미나이 AI 분석', nts: '국세청 사업자 상태', ftc_mail: '공정위 통신판매사업자', ftc_door: '공정위 방문판매사업자', fsc_corp: '금융위 기업기본정보', hira: '심평원 병원정보', thecheat: '더치트' };
+const API_NAME = { naver: '네이버 검색 (예전 기록, 지금은 쓰지 않음)', vision: '구글 Vision 사진 웹 검색', whois: 'KISA WHOIS · RDAP', gemini: '제미나이 AI 분석', nts: '국세청 사업자 상태', ftc_mail: '공정위 통신판매사업자', ftc_door: '공정위 방문판매사업자', fsc_corp: '금융위 기업기본정보', ftc_sponsor: '공정위 후원방문판매사업자', ftc_mlm: '공정위 다단계판매사업자', hira: '심평원 병원정보', thecheat: '더치트' };
 const TYPE = { delete: '삭제 요청', inquiry: '문의', report: '신고' };
 
 function login(msg) {
@@ -49,9 +49,17 @@ function login(msg) {
 async function load() {
   const key = sessionStorage.getItem(KEY);
   if (!key) return login();
-  const r = await fetch('/api/admin/stats', { headers: { 'x-admin-key': key } });
-  if (r.status === 401) { sessionStorage.removeItem(KEY); return login('관리자 키가 맞지 않습니다.'); }
-  render(await r.json(), key);
+  // 연결이 끊기거나 서버 오류면 키는 지우지 않고 이유만 알린다(2026-10-26)
+  let r;
+  try {
+    r = await fetch('/api/admin/stats', { headers: { 'x-admin-key': key } });
+  } catch {
+    return login('서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 들어가 주세요.');
+  }
+  if (r.status === 401) { sessionStorage.removeItem(KEY); return login('관리자 키가 맞지 않습니다. 다시 입력해 주세요.'); }
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j) return login('통계를 불러오지 못했습니다. 잠시 뒤 다시 들어가 주세요.');
+  render(j, key);
 }
 
 function render(s, key) {
@@ -79,7 +87,13 @@ function render(s, key) {
       h('td', {}, q.contact || '—'),
       h('td', {}, h('label', { class: 'consent', style: 'padding:0' }, h('input', {
         type: 'checkbox', checked: q.done,
-        onchange: (e) => fetch('/api/admin/request-done', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ id: q.id, done: e.target.checked }) }),
+        // 저장이 안 되면 체크를 되돌리고 알린다
+        onchange: (e) => {
+          const box = e.target;
+          fetch('/api/admin/request-done', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ id: q.id, done: box.checked }) })
+            .then((r) => { if (!r.ok) throw new Error(); })
+            .catch(() => { box.checked = !box.checked; alert('처리 표시를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요.'); });
+        },
       }), h('span', {}, '처리')))))
     : [h('tr', {}, h('td', { colspan: 5, class: 'empty' }, '들어온 요청이 없습니다.'))];
 

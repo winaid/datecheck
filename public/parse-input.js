@@ -114,6 +114,11 @@ export function stripLegal(s) {
   return String(s || '').normalize('NFKC').replace(LEGAL, ' ').replace(LEGAL_EN, ' ');
 }
 
+// 이름 비교용 — 법인 표시·띄어쓰기·문장부호·대소문자를 뺀다('(주)카카오' = '카카오' = '주식회사 카카오')
+export function nameKey(s) {
+  return stripLegal(s).replace(/[\s·.,'"“”‘’()]/g, '').toLowerCase();
+}
+
 // '(주)브이글로벌', '주식회사 브이글로벌', '㈜브이글로벌', '브이글로벌 다녀요' → '브이글로벌'
 export function companyName(raw) {
   const words = stripLegal(raw).replace(/[,·]/g, ' ').split(/\s+/).filter(Boolean);

@@ -52,10 +52,13 @@ function glueText(root = document.body) {
 }
 
 // ---------- 방문자·이벤트 ----------
-let visitor = localStorage.getItem('dc-visitor');
+// 저장이 막힌 브라우저(시크릿 모드·저장 차단)에서도 화면이 멈추지 않게 — 그때는 이번 방문에서만 쓰는 아이디
+let storageOk = true;
+let visitor = '';
+try { visitor = localStorage.getItem('dc-visitor') || ''; } catch { storageOk = false; }
 if (!visitor) {
   visitor = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
-  localStorage.setItem('dc-visitor', visitor);
+  try { localStorage.setItem('dc-visitor', visitor); } catch { storageOk = false; }
 }
 function track(type) {
   fetch('/api/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, visitor }), keepalive: true }).catch(() => {});
@@ -64,9 +67,61 @@ function track(type) {
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.toggle('long', String(msg).length > 34);
   t.classList.add('show');
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => t.classList.remove('show'), 2600);
+  toast.t = setTimeout(() => t.classList.remove('show'), Math.max(2600, String(msg).length * 90));
+}
+
+// ---------- 서버와 주고받기: 어떤 실패든 쉬운 말과 할 일로 바꿔 던진다 (2026-10-26 오너: 모든 오류에 친절한 안내) ----------
+const NET = {
+  offline: '인터넷 연결이 끊긴 것 같아요. 와이파이나 데이터 연결을 확인한 뒤 다시 눌러 주세요.',
+  unreachable: '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 잠시 뒤 다시 눌러 주세요.',
+  timeout: '서버 응답이 너무 늦어요. 잠시 뒤 다시 눌러 주세요.',
+  busy: '서버가 잠시 바빠요. 1분쯤 뒤 다시 눌러 주세요. 계속 안 되면 화면 맨 아래 ‘삭제 요청·문의·신고’로 알려 주세요.',
+  tooLarge: '올린 사진이 너무 커서 보내지 못했어요. 캡처를 몇 장 빼고 다시 시도해 주세요.',
+};
+async function api(path, { body, timeout = 20000, headers = {} } = {}) {
+  if (navigator.onLine === false) throw Object.assign(new Error(NET.offline), { network: true });
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeout);
+  let r;
+  try {
+    r = await fetch(path, body === undefined
+      ? { headers, signal: ctl.signal }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body), signal: ctl.signal });
+  } catch {
+    throw Object.assign(new Error(ctl.signal.aborted ? NET.timeout : navigator.onLine === false ? NET.offline : NET.unreachable), { network: true });
+  } finally {
+    clearTimeout(timer);
+  }
+  let j = null;
+  try { j = await r.json(); } catch { /* JSON 이 아닌 답 — 관문 오류 화면 등 */ }
+  if (!r.ok) throw Object.assign(new Error(j?.error || (r.status === 413 ? NET.tooLarge : r.status === 504 ? NET.timeout : NET.busy)), { status: r.status });
+  if (!j) throw Object.assign(new Error(NET.busy), { status: r.status });
+  return j;
+}
+
+// 예상 못 한 화면 오류 — 우리 코드에서 난 것만, 8초에 한 번
+let crashAt = 0;
+function crashed() {
+  if (Date.now() - crashAt < 8000) return;
+  crashAt = Date.now();
+  toast('화면에 문제가 생겼어요. 새로고침하면 대부분 해결돼요.');
+}
+addEventListener('error', (e) => { if (String(e.filename || '').startsWith(location.origin)) crashed(); });
+addEventListener('unhandledrejection', (e) => { if (/\/app\.js/.test(String(e.reason?.stack || ''))) crashed(); });
+
+// 설정(검사 항목·가격) — 못 받으면 점검을 시작할 수 없어 다시 받는다
+async function loadConfig() {
+  try {
+    const c = await api(`/api/config?v=${visitor}`, { headers: { 'x-visitor': visitor }, timeout: 12000 });
+    if (!Array.isArray(c.checks) || !c.checks.length) return false;
+    CONFIG = c;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function countUp(el, to, dur = 1100) {
@@ -419,21 +474,32 @@ const curStep = () => W.steps[W.i];
 
 // 사진 줄이기 — 캡처 글씨가 읽히도록 긴 변 2000px, 프로필 사진은 1280px
 async function compress(file, max, quality = 0.85) {
+  if (!String(file?.type || '').startsWith('image/')) throw new Error('사진 파일만 올릴 수 있어요. JPG나 PNG 사진을 골라 주세요.');
   let bmp;
   try {
     bmp = await createImageBitmap(file);
   } catch {
-    throw new Error('이 사진 형식은 열 수 없습니다. JPG나 PNG로 올려 주세요.');
+    throw new Error('이 사진은 브라우저에서 열 수 없는 형식이에요(아이폰 HEIC 등). 화면을 스크린샷으로 다시 찍거나 JPG로 바꿔 올려 주세요.');
   }
-  const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
-  const c = document.createElement('canvas');
-  c.width = Math.round(bmp.width * s);
-  c.height = Math.round(bmp.height * s);
-  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', quality);
+  try {
+    const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * s);
+    c.height = Math.round(bmp.height * s);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', quality);
+  } catch {
+    throw new Error('사진이 너무 커서 줄이지 못했어요. 스크린샷으로 다시 찍어 올려 주세요.');
+  }
 }
 
-function openWizard() {
+async function openWizard() {
+  if (!CONFIG.checks.length && !(await loadConfig())) {
+    const close = sheet(h('h2', {}, '지금은 점검을 시작할 수 없어요'),
+      h('p', { class: 'w' }, navigator.onLine === false ? NET.offline : '서버에서 검사 항목을 받아 오지 못했어요. 인터넷 연결을 확인하고 잠시 뒤 다시 눌러 주세요.'),
+      h('button', { class: 'btn btn-rose', type: 'button', style: 'width:100%', onclick: () => { close(); openWizard(); } }, '다시 시도'));
+    return;
+  }
   const box = $('#wizard');
   if (!W.opened) {
     W.opened = true;
@@ -543,7 +609,14 @@ function renderStep(dir) {
 
   const foot = $('#wz-foot');
   const next = view.next ? h('button', { class: `btn ${view.next.rose ? 'btn-rose' : 'btn-navy'}`, type: 'button', id: 'wz-next', onclick: () => { if (!next.disabled) view.next.go(); } }, view.next.label) : null;
-  const refresh = () => { if (next) next.disabled = !view.next.ok(); updateChrome(); };
+  // '다음'이 안 눌릴 때 이유를 한 줄로(view.next.why 가 있는 단계만, 무언가 입력한 뒤에)
+  const why = h('p', { class: 'wz-why', 'aria-live': 'polite' });
+  stage.append(why);
+  const refresh = () => {
+    if (next) next.disabled = !view.next.ok();
+    why.textContent = next && next.disabled && view.next.why ? view.next.why() || '' : '';
+    updateChrome();
+  };
   view.refresh = refresh;
   foot.replaceChildren(...[
     view.back !== false && W.i > 0 ? h('button', { class: 'btn btn-line', type: 'button', onclick: () => go(view.backTo ? W.steps.indexOf(view.backTo) : W.i - 1, -1) }, '이전') : null,
@@ -605,7 +678,7 @@ function dropZone({ multiple, onFiles, title, sub }) {
     h('b', {}, title), h('span', {}, sub), file);
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
-  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); onFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))); });
+  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); onFiles([...e.dataTransfer.files]); });
   return zone;
 }
 const pastedImages = (e) => [...(e.clipboardData?.items || [])].filter((it) => it.type.startsWith('image/')).map((it) => it.getAsFile()).filter(Boolean);
@@ -624,7 +697,7 @@ const STEPS = {
     }, h('b', {}, x.label), h('span', {}, x.desc))));
     return {
       body: [...head('알고 있는 정보를 모두 골라 주세요', '많이 고를수록 검사할 수 있는 항목이 늘어납니다. 모든 정보를 넣을 필요는 없습니다.'), grid,
-        h('p', { class: 'wz-hint w' }, '이름은 단독으로 찾지 않고 교차검증을 돕는 보조 정보로만 씁니다.')],
+        h('p', { class: 'wz-hint w' }, '이름은 받지 않습니다. 이름으로 사람을 찾는 일이 없도록 입력 칸을 두지 않았습니다.')],
       back: false,
       next: { label: '다음', ok: () => W.sel.size > 0, go: () => { buildSteps(); next(); } },
     };
@@ -635,7 +708,7 @@ const STEPS = {
     return {
       body: [...head('상대방 전화번호를 입력해 주세요', '상대에게 직접 받은 번호만 넣어 주세요. 해외 번호는 +로 시작하면 됩니다.'), field('전화번호', el)],
       skip: true,
-      next: { label: '다음', ok: () => digits(W.v.phone).length >= 8, go: next },
+      next: { label: '다음', ok: () => digits(W.v.phone).length >= 8, why: () => (digits(W.v.phone).length ? '번호가 짧아요. 숫자 8자리 이상 넣어 주세요.' : ''), go: next },
     };
   },
 
@@ -657,7 +730,9 @@ const STEPS = {
     };
     const imgPane = h('div', {}, dropZone({ multiple: true, onFiles: add, title: '대화 캡처를 올려 주세요', sub: '여기에 끌어다 놓거나 눌러서 고릅니다. 붙여넣기도 됩니다. 최대 6장' }), thumbs, err);
     const txt = textarea('chatText', { placeholder: '상대: 오늘 뭐 해요?\n나: 집이에요. 왜요?\n상대: …', 'aria-label': '대화 글' });
-    const txtPane = h('div', {}, txt, h('p', { class: 'fld-help' }, '말한 사람을 “상대:”와 “나:”로 적으면 상대가 한 말만 골라 분석합니다.'));
+    const long = h('p', { class: 'fld-help fld-bad', hidden: v.chatText.length <= 20000 }, '대화가 길어 앞부분 2만 자까지만 분석해요. 돈 이야기가 나온 부분이 앞에 오도록 넣어 주세요.');
+    txt.addEventListener('input', () => { long.hidden = v.chatText.length <= 20000; });
+    const txtPane = h('div', {}, txt, h('p', { class: 'fld-help' }, '말한 사람을 “상대:”와 “나:”로 적으면 상대가 한 말만 골라 분석합니다.'), long);
     const seg = h('div', { class: 'seg', role: 'tablist' },
       ['image', 'text'].map((m) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(v.chatMode === m), onclick: () => { v.chatMode = m; renderStep(0); } }, m === 'image' ? '캡처 올리기' : '글로 붙여넣기')));
     paint();
@@ -665,7 +740,7 @@ const STEPS = {
       body: [...head('대화를 올려 주세요', '캡처를 올리면 AI가 글자를 읽습니다. 대화를 글로 붙여 넣어도 됩니다.'), seg, v.chatMode === 'image' ? imgPane : txtPane],
       skip: true,
       onPaste: v.chatMode === 'image' ? (e) => { const f = pastedImages(e); if (f.length) { e.preventDefault(); add(f); } } : null,
-      next: { label: '다음', ok: () => (v.chatMode === 'image' ? v.chatImages.length > 0 : v.chatText.trim().length >= 5), go: next },
+      next: { label: '다음', ok: () => (v.chatMode === 'image' ? v.chatImages.length > 0 : v.chatText.trim().length >= 5), why: () => (v.chatMode === 'text' && v.chatText.trim() ? '대화를 조금 더 넣어 주세요. 다섯 글자 이상이면 됩니다.' : ''), go: next },
     };
   },
 
@@ -701,7 +776,7 @@ const STEPS = {
         h('div', { class: 'fld' }, h('span', { class: 'lbl' }, '계좌'), h('div', { class: 'inp-row' }, bank, num))],
       skip: true,
       focus: num,
-      next: { label: '다음', ok: () => digits(W.v.account).length >= 8, go: next },
+      next: { label: '다음', ok: () => digits(W.v.account).length >= 8, why: () => (digits(W.v.account).length ? '계좌번호가 짧아요. 숫자 8자리 이상 넣어 주세요.' : ''), go: next },
     };
   },
 
@@ -710,7 +785,7 @@ const STEPS = {
       body: [...head('상대방이 보낸 링크를 넣어 주세요', '투자 사이트, 쇼핑몰, 받은 링크를 넣어 주세요. 여러 개면 줄을 바꿔 적습니다.'),
         field('링크', textarea('url', { class: 'inp sm', placeholder: 'https://', spellcheck: 'false' }), h('p', { class: 'fld-help' }, '사이트에 직접 접속하지 않고 공개된 등록 정보만 확인합니다.'))],
       skip: true,
-      next: { label: '다음', ok: () => /\.[a-z]{2,}/i.test(W.v.url), go: next },
+      next: { label: '다음', ok: () => /\.[a-z]{2,}/i.test(W.v.url), why: () => (W.v.url.trim() ? '링크 모양이 아니에요. example.com처럼 점(.)이 들어간 주소를 넣어 주세요.' : ''), go: next },
     };
   },
 
@@ -807,7 +882,7 @@ const STEPS = {
       body: [...head('상대가 자기에 대해 한 말을 적어 주세요', '사는 곳, 직업, 경력, 운영 기간처럼 확인하고 싶은 말을 적어 주세요. 대화와 맞는지 비교합니다.'), chips, ta],
       skip: true,
       focus: ta,
-      next: { label: '다음', ok: () => W.v.claims.trim().length >= 2, go: next },
+      next: { label: '다음', ok: () => W.v.claims.trim().length >= 2, why: () => (W.v.claims.trim() ? '두 글자 이상 적어 주세요.' : ''), go: next },
     };
   },
 
@@ -839,7 +914,10 @@ const STEPS = {
         h('p', { class: 'pv-line' }, `총 13개 항목 중 ${ids.length}개 검사 가능`),
         usesAi ? h('p', { class: 'ai-note w' }, h('b', {}, '생성형 AI 사용 안내'), ' 대화와 사진은 생성형 AI인 구글 제미나이로 분석하고, 대화 캡처의 글자도 AI가 읽습니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.') : null,
         boxes],
-      next: { label: '무료 점검 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next() },
+      next: {
+        label: '무료 점검 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next(),
+        why: () => (!ids.length ? '고른 정보로는 점검할 항목이 없어요. 이전으로 돌아가 정보를 하나 더 넣어 주세요.' : '아래 두 칸에 모두 체크하면 시작할 수 있어요.'),
+      },
     };
   },
 
@@ -865,7 +943,7 @@ const STEPS = {
     const fullItems = items.filter((i) => i.plan === 'full');
     const fullSignals = fullItems.reduce((s, i) => s + i.signalCount, 0);
     const freeSignals = items.filter((i) => i.plan !== 'full').reduce((s, i) => s + i.signalCount, 0);
-    const chip = (i) => (i.status === 'signal' ? ['st-signal', `확인 신호 ${i.signalCount}건`] : i.status === 'note' ? ['st-note', `참고 ${i.noteCount}건`] : i.status === 'pending' ? ['st-pending', '연동 준비 중'] : ['st-clear', '특이사항 없음']);
+    const chip = (i) => (i.status === 'signal' ? ['st-signal', `확인 신호 ${i.signalCount}건`] : i.status === 'note' ? ['st-note', `참고 ${i.noteCount}건`] : i.status === 'retry' ? ['st-pending', '다시 확인 필요'] : i.status === 'pending' ? ['st-pending', '연동 준비 중'] : ['st-clear', '특이사항 없음']);
     const nN = h('b', {}, '0');
     const nS = h('b', {}, '0');
     // 정밀 분석으로 볼 것이 없으면(대화·사진 없음) 무료 점검을 먼저 고른다
@@ -886,6 +964,7 @@ const STEPS = {
     h('b', {}, k === 'full' && W.recheckToken ? '정밀 분석 · 재검사' : planLabel(k)),
     h('p', { class: 'pp-price' }, k === 'full' ? (fullPrice ? won(fullPrice) : '가격 미정') : '0원'),
     h('span', {}, k === 'full' && !fullItems.length ? '대화나 사진을 넣으면 고를 수 있습니다' : desc[k]))));
+    const openErr = h('p', { class: 'err-msg', role: 'alert' });
     return {
       body: [...head('무료 점검 결과', null),
         h('p', { class: 'pv-line' }, h('span', { class: 'nw' }, `총 13개 항목 중 ${p.totals.checkable}개 점검`), ' / ', h('span', { class: 'nw' }, `확인 신호 ${p.totals.signals}개 발견`)),
@@ -902,7 +981,7 @@ const STEPS = {
         })),
         skipped ? h('p', { class: 'pv-more' }, `정보가 없어 점검하지 않은 항목 ${skipped}개`) : null,
         h('p', { class: 'lbl', style: 'font-weight:800;margin-bottom:10px' }, '리포트 고르기'),
-        plans],
+        plans, openErr],
       back: false,
       after: () => { countUp(nN, p.totals.checkable, 900); countUp(nS, p.totals.signals, 1100); track('preview_view'); },
       next: {
@@ -912,10 +991,11 @@ const STEPS = {
           if (W.plan !== 'free') { next(); return; }
           const btn = $('#wz-next');
           btn.disabled = true;
+          openErr.textContent = '';
           try {
             await payAndOpen({ token: W.token, plan: 'free', visitor });
           } catch (e) {
-            toast(e.message || '리포트를 열지 못했습니다');
+            openErr.textContent = e.message;
             btn.disabled = false;
           }
         },
@@ -941,10 +1021,11 @@ const STEPS = {
         go: async () => {
           const btn = $('#wz-next');
           btn.disabled = true;
+          err.textContent = '';
           try {
             await payAndOpen({ token: W.token, plan: 'full', visitor, recheckToken: W.recheckToken || undefined });
           } catch (e) {
-            err.textContent = e.message || '결제 처리 중 문제가 생겼습니다.';
+            err.textContent = e.message;
             btn.disabled = false;
           }
         },
@@ -955,9 +1036,7 @@ const STEPS = {
 
 // 결제(시험판)하고 리포트로 — 무료 점검도 같은 길로 연다
 async function payAndOpen(body) {
-  const r = await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error);
+  const j = await api('/api/pay', { body });
   keepReport(j);
   resetWizard();
   closeWizard();
@@ -980,9 +1059,8 @@ async function runAnalysis(list, bar, err) {
     const body = JSON.stringify({ visitor, input: W.val() });
     // 서버 함수가 받는 요청 크기 한도(4.5MB) 안으로
     if (body.length > 4_200_000) throw new Error('올린 사진이 너무 큽니다. 캡처 수를 줄여 주세요.');
-    const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-    const j = await r.json().catch(() => ({ error: '점검 중에 문제가 생겼습니다. 잠시 뒤 다시 시도해 주세요.' }));
-    if (!r.ok) throw new Error(j.error || '점검 중에 문제가 생겼습니다.');
+    // 서버 함수는 60초까지 돈다 — 그보다 조금 길게 기다린다
+    const j = await api('/api/analyze', { body, timeout: 70000 });
     const wait = Math.max(0, 2600 - (performance.now() - t0));
     await sleep(wait);
     done = true;
@@ -1004,10 +1082,13 @@ async function runAnalysis(list, bar, err) {
     done = true;
     clearInterval(tick);
     rows.forEach((r) => r.classList.remove('go'));
-    err.textContent = `${e.message} 이전 단계에서 다시 시도해 주세요.`;
+    err.textContent = e.message;
     const foot = $('#wz-foot');
     foot.hidden = false;
-    foot.replaceChildren(h('button', { class: 'btn btn-line', type: 'button', onclick: () => go(W.steps.indexOf('confirm'), -1) }, '이전'));
+    foot.replaceChildren(
+      h('button', { class: 'btn btn-line', type: 'button', onclick: () => go(W.steps.indexOf('confirm'), -1) }, '이전'),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn btn-rose', type: 'button', id: 'wz-retry', onclick: () => go(W.steps.indexOf('run'), 0) }, '다시 시도'));
   }
 }
 
@@ -1043,6 +1124,7 @@ const STATUS_CHIP = {
   note: (i) => ['st-note', `참고 ${i.noteCount}건`],
   clear: () => ['st-clear', '특이사항 없음'],
   pending: () => ['st-pending', '연동 준비 중'],
+  retry: () => ['st-pending', '다시 확인 필요'],
   na: () => ['st-na', '검사하지 않음'],
 };
 
@@ -1274,10 +1356,17 @@ const NEXT_STEP = {
 // ---------- 리포트 보관: 서버가 아니라 이 기기에, 암호화된 봉투로 24시간 ----------
 const RKEY = 'dc-r-';
 const reportCache = new Map();
+const unsaved = new Set();
 function keepReport(j) {
-  try { localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt, plan: j.report?.plan || null, paidAt: j.report?.paidAt || null })); } catch { /* 저장 못 해도 이번 화면에서는 연다 */ }
+  try {
+    localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt, plan: j.report?.plan || null, paidAt: j.report?.paidAt || null }));
+    unsaved.delete(j.id);
+  } catch {
+    unsaved.add(j.id); // 저장 못 해도 이번 화면에서는 연다 — 리포트 위에 안내
+  }
   if (j.report) reportCache.set(j.id, j.report);
 }
+const forgetReport = (id) => { try { localStorage.removeItem(RKEY + id); } catch { /* 없음 */ } };
 // 재검사 값 — 이 기기에서 24시간 안에 정밀 분석을 결제한 리포트가 있으면 그 봉투를 함께 보낸다(서버가 다시 확인)
 function recentFullToken() {
   try {
@@ -1310,15 +1399,22 @@ function purgeReports() {
 // 무료 점검 → 정밀 분석, 신고용 정리본 추가 (시험판 결제)
 async function upgrade(id, addon) {
   const s = storedReport(id);
-  const body = addon ? { token: s?.token, addon } : { token: s?.token, plan: 'full', visitor, recheckToken: recentFullToken() || undefined };
-  const r = s ? await fetch('/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) : null;
-  const j = r ? await r.json().catch(() => ({})) : {};
-  if (r?.ok) {
-    keepReport(j);
-    toast(addon ? '신고용 정리본을 만들었습니다' : '정밀 분석으로 열었습니다');
-    await showReport(id);
-    if (addon === 'casefile') openCasefile(j.report);
-  } else toast(j.error || '리포트 보관 시간이 지났습니다');
+  if (!s) {
+    toast(unsaved.has(id) ? '이 브라우저는 리포트를 저장하지 못해 추가할 수 없어요. 새로 점검해 주세요.' : '이 기기에 리포트가 없거나 보관 시간(24시간)이 지났어요. 새로 점검해 주세요.');
+    return;
+  }
+  const body = addon ? { token: s.token, addon } : { token: s.token, plan: 'full', visitor, recheckToken: recentFullToken() || undefined };
+  let j;
+  try {
+    j = await api('/api/pay', { body });
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  keepReport(j);
+  toast(addon ? '신고용 정리본을 만들었습니다' : '정밀 분석으로 열었습니다');
+  await showReport(id);
+  if (addon === 'casefile') openCasefile(j.report);
 }
 
 // ---------- 리포트 덧붙이는 칸: 대화 순서 정리 · 신고용 정리본 · 재검사 (2026-10-22) ----------
@@ -1419,21 +1515,20 @@ async function showReport(id) {
   scrollTo({ top: 0 });
   let j = reportCache.get(id);
   let error = null;
+  let canRetry = false;
   if (!j) {
     const s = storedReport(id);
     if (!s) {
       error = '리포트는 서버에 저장하지 않고 점검한 기기에만 24시간 보관합니다. 다른 기기이거나 보관 시간이 지났다면 새로 점검해 주세요.';
     } else {
       try {
-        const r = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token }) });
-        j = await r.json();
-        if (!r.ok) {
-          error = j.error || '리포트를 불러오지 못했습니다.';
-          if (r.status === 404 || r.status === 410) localStorage.removeItem(RKEY + id);
-          j = null;
-        } else reportCache.set(id, j);
-      } catch {
-        error = '리포트를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.';
+        j = await api('/api/report', { body: { token: s.token } });
+        reportCache.set(id, j);
+      } catch (e) {
+        j = null;
+        error = e.message;
+        if (e.status === 404 || e.status === 410) forgetReport(id);
+        else canRetry = true;
       }
     }
   }
@@ -1441,6 +1536,7 @@ async function showReport(id) {
     view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' },
       h('h1', {}, '리포트를 열 수 없습니다'),
       h('p', { class: 'w' }, error),
+      canRetry ? h('button', { class: 'btn btn-navy', type: 'button', style: 'margin-right:8px', onclick: () => showReport(id) }, '다시 시도') : null,
       h('button', { class: 'btn btn-rose', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새로 점검하기'))));
     glueText(view);
     wrapText(view);
@@ -1450,7 +1546,8 @@ async function showReport(id) {
   OFFER = j.offers || {};
   const t = j.totals;
   const items = j.items;
-  const pending = items.filter((i) => i.status === 'pending').length;
+  const pending = items.filter((i) => i.status === 'pending' || i.status === 'retry').length;
+  const retrying = items.some((i) => i.status === 'retry');
   const nS = h('b', {}, '0');
   const nN = h('b', {}, '0');
   const nNote = h('b', {}, '0');
@@ -1485,16 +1582,18 @@ async function showReport(id) {
         h('div', {}, nN, h('span', {}, '검사한 항목, 13개 중')),
         h('div', { class: 'sig' }, nS, h('span', {}, '확인 신호')),
         h('div', {}, nNote, h('span', {}, '참고')),
-        h('div', {}, nP, h('span', {}, '연동 준비 중 항목'))))),
+        h('div', {}, nP, h('span', {}, retrying ? '다시 확인할 항목' : '연동 준비 중 항목'))))),
     h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
       h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '분석 결과는 상대방의 신원·안전성을 보증하지 않습니다.'), ' 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
       // .w 안의 span 은 wrap.js 가 다시 짜면서 표시 모양이 벗겨진다 → 따옴표 글자로
       hasAiText(items) ? h('p', { class: 'rp-ai w' }, '‘AI 생성’ 표시가 붙은 설명은 생성형 AI인 구글 제미나이가 작성했습니다. 근거 문장은 입력한 대화에 실제로 있는 문장만 보여 드리며, 캡처의 글자는 AI가 읽은 것이라 원본 캡처와 함께 확인하세요.') : null,
+      unsaved.has(id) ? h('p', { class: 'rp-notes w' }, '이 브라우저에서는 리포트를 저장하지 못했어요(시크릿 모드나 저장 차단 설정일 수 있어요). 이 화면을 닫으면 다시 열 수 없으니, 필요한 내용은 아래 ‘PDF로 저장’으로 지금 남겨 두세요.') : null,
       j.meta?.notes?.length ? h('p', { class: 'rp-notes' }, j.meta.notes.join(' ')) : null,
       timelineSec(j),
       sec('확인 신호가 있는 항목', group('signal'), '사기에서 자주 보이는 흔적입니다. 근거를 직접 읽어 보세요.'),
       sec('참고할 항목', group('note'), '이것만으로 판단할 수는 없지만 알아 두면 좋은 내용입니다.'),
       sec('특이사항 없는 항목', group('clear'), '찾지 못했다는 뜻이며, 안전하다는 뜻은 아닙니다.'),
+      sec('잠시 확인하지 못한 항목', group('retry'), '조회 서버가 잠깐 응답하지 않아 확인하지 못했습니다. 각 항목의 버튼으로 공식 사이트에서 바로 확인하거나, 잠시 뒤 새로 점검해 주세요. 무료 점검은 다시 해도 비용이 들지 않습니다.'),
       sec('연동 준비 중인 항목', group('pending'), '제휴나 공공데이터 키 연동 뒤 자동으로 조회합니다. 지금은 공식 사이트에서 직접 확인할 수 있습니다.'),
       na.length ? h('section', { class: 'rp-sec' }, h('h2', { class: 'rp-sec-t' }, '검사하지 않은 항목', h('small', {}, `${na.length}개`)),
         h('div', { class: 'na-list' }, na.map((i) => h('span', {}, `${pad2(i.no)} ${i.title}`)))) : null,
@@ -1547,10 +1646,18 @@ function openRequest() {
     h('div', { class: 'fld' }, msg), h('div', { class: 'fld' }, contact), err,
     h('button', {
       class: 'btn btn-rose', type: 'button', style: 'width:100%',
-      onclick: async () => {
-        const r = await fetch('/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, message: msg.value, contact: contact.value }) });
-        const j = await r.json();
-        if (!r.ok) { err.textContent = j.error; return; }
+      onclick: async (e) => {
+        const btn = e.currentTarget;
+        err.textContent = '';
+        if (!msg.value.trim()) { err.textContent = '내용을 적어 주세요. 삭제 요청이라면 리포트 주소나 점검한 날짜를 함께 적어 주세요.'; msg.focus(); return; }
+        btn.disabled = true;
+        try {
+          await api('/api/request', { body: { type, message: msg.value, contact: contact.value } });
+        } catch (x) {
+          err.textContent = x.message;
+          btn.disabled = false;
+          return;
+        }
         close();
         toast('접수했습니다');
       },
@@ -1574,9 +1681,12 @@ function openPrivacy() {
 // =====================================================================
 async function boot() {
   purgeReports();
-  try {
-    CONFIG = await (await fetch(`/api/config?v=${visitor}`, { headers: { 'x-visitor': visitor } })).json();
-  } catch { /* 설정 없이도 첫 화면은 뜬다 */ }
+  // 설정 없이도 첫 화면은 뜬다 — 못 받았으면 3초·10초 뒤 다시 받아 검사 항목 칸을 채운다
+  if (!(await loadConfig())) {
+    for (const wait of [3000, 10000]) {
+      setTimeout(async () => { if (!CONFIG.checks.length && (await loadConfig())) { renderCheckGrid(); glueText(); wrapText(); } }, wait);
+    }
+  }
   initLanding();
   renderCheckGrid();
   route();
