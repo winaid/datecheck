@@ -406,6 +406,23 @@ select.inp { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg x
 .seg button { border: 0; background: transparent; padding: 9px 18px; border-radius: 9px; font-size: 15px; font-weight: 700; color: var(--sub); transition: all .25s var(--ease); }
 .seg button[aria-selected="true"] { background: #fff; color: var(--ink); box-shadow: 0 2px 6px rgba(17, 29, 51, .1); }
 
+/* 카톡 대화 파일(2026-10-26) — 읽은 파일 카드 · 나 고르기 · 받는 법 */
+.kf-card { border: 1.5px solid var(--line); border-radius: 14px; padding: 14px 16px; background: #fafbfc; }
+.kf-top { display: flex; align-items: center; gap: 12px; }
+.kf-name { flex: 1; min-width: 0; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kf-top .link-btn { flex: none; font-size: 14px; color: var(--sub); }
+.kf-meta { font-size: 14px; color: var(--sub); margin-top: 4px; }
+.kf-q { font-size: 15.5px; font-weight: 700; color: var(--ink); margin: 16px 0 8px; }
+.kf-who .chip { font-variant-numeric: tabular-nums; }
+.kf-how { margin-top: 10px; font-size: 14px; color: var(--sub); }
+.kf-how summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padding: 4px 0; }
+.kf-how p { margin-top: 6px; }
+.kf-conv { margin-top: 10px; border: 1.5px solid var(--rose); background: var(--rose-50); border-radius: 12px; padding: 12px 14px; font-size: 14.5px; }
+.kf-conv .chips { margin-top: 8px; }
+@media (max-width: 640px) {
+  .seg-3 { display: flex; width: 100%; }
+  .seg-3 button { flex: 1 1 0; padding: 9px 6px; font-size: 14px; white-space: nowrap; }
+}
 .drop { border: 2px dashed #cbd2dc; border-radius: 16px; padding: 30px 20px; text-align: center; background: #fafbfc; transition: border-color .2s, background-color .2s; cursor: pointer; }
 .drop.over { border-color: var(--rose); background: var(--rose-50); }
 .drop b { display: block; font-size: 16.5px; margin-bottom: 4px; }

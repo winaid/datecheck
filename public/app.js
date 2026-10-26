@@ -1,6 +1,7 @@
 // DATE CHECK 화면 — 첫 화면 연출, 팝업 단계 입력(STEP 1~6), 리포트(STEP 7~8)
 // 바깥에서 온 글(검색 결과·대화)은 반드시 textContent 로만 넣는다.
 import { isSnsUrl, companyName } from '/parse-input.js';
+import { parseKakao, toChatText, readChatFile } from '/kakao-export.js';
 
 const $ =(s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -144,12 +145,12 @@ const NEED = {
   invest: { need: '카톡·DM 대화', g: 'chat' },
   privacy: { need: '카톡·DM 대화', g: 'chat' },
   avoid: { need: '카톡·DM 대화', g: 'chat' },
-  mismatch: { need: '대화와 상대가 한 말', g: 'chat' },
+  mismatch: { need: '대화와 회사·직업', g: 'chat' },
   photo: { need: '상대방 사진', g: 'photo' },
   link: { need: '상대가 보낸 사이트 주소', g: 'link' },
   biz: { need: '사업자등록번호', g: 'biz' },
-  commerce: { need: '사업자번호 또는 상호', g: 'biz' },
-  company: { need: '회사명 또는 상호', g: 'biz' },
+  commerce: { need: '사업자등록번호', g: 'biz' },
+  company: { need: '회사명', g: 'biz' },
   job: { need: '직업', g: 'biz' },
 };
 // 2026-10-22 오너 결정 — 무료 점검 + 정밀 분석(방문자마다 시험 가격) + 신고용 정리본·재검사
@@ -369,21 +370,20 @@ function initDemo() {
 // =====================================================================
 const INPUTS = [
   { key: 'phone', label: '전화번호', desc: '상대가 알려 준 번호' },
-  { key: 'chat', label: '카톡·DM 대화', desc: '캡처 또는 글 붙여넣기' },
+  { key: 'chat', label: '카톡·DM 대화', desc: '캡처, 내보내기 파일, 글' },
   { key: 'photo', label: '상대방 사진', desc: '프로필 사진 한 장' },
   { key: 'account', label: '계좌번호', desc: '돈을 보내 달라고 한 계좌' },
   { key: 'url', label: '상대방이 보낸 URL', desc: '받은 링크, 투자·쇼핑 사이트' },
   { key: 'company', label: '회사명·직업', desc: '다닌다고 한 회사와 직업' },
   { key: 'biz', label: '사업자등록번호', desc: '운영한다는 사업체 번호' },
-  { key: 'shop', label: '쇼핑몰·사업체명', desc: '운영한다고 한 곳' },
-  { key: 'claims', label: '상대가 직접 말한 정보', desc: '사는 곳, 경력, 운영 기간' },
   // '이름'은 2026-10-26 뺐다 — 분석에 쓰지 않는 정보라 받지 않는다(개인정보 최소 수집, 법 제16조)
+  // '쇼핑몰·사업체명'·'상대가 직접 말한 정보'도 2026-10-26 오너 지시로 뺐다
 ];
 const STEP_LABEL = { select: '받은 것 선택', confirm: '입력 확인', run: '점검', preview: '점검 결과', pay: '결제' };
 const BANKS = ['KB국민', '신한', '우리', '하나', 'NH농협', 'IBK기업', '카카오뱅크', '토스뱅크', '케이뱅크', '새마을금고', '우체국', '수협', '신협', 'SC제일', '부산', '경남', 'iM뱅크', '광주', '전북', '제주', '기타'];
-const CLAIM_HINTS = ['서울에 산다고 했어요', '해외에서 일한다고 했어요', '회사를 5년째 운영 중이라고 했어요', '돈이 급하다고 했어요'];
 
-const freshValues = () => ({ phone: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', photo: '', url: '', company: '', job: '', workplace: '', biz: '', shop: '', shopUrl: '', claims: '' });
+// chatFile = 카톡 내보내기 파일을 읽은 결과(이 기기에만, 이름 포함) · chatFileText = '나'·'상대'로 바꿔 서버에 보낼 글
+const freshValues = () => ({ phone: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', chatFile: null, chatFileText: '', photo: '', url: '', company: '', job: '', workplace: '', biz: '' });
 const W = { sel: new Set(), v: freshValues(), steps: ['select'], i: 0, consent: [false, false], id: null, preview: null, plan: 'full', opened: false, lastFocus: null };
 
 const digits = (s) => String(s || '').replace(/\D/g, '');
@@ -420,12 +420,12 @@ function estimateIds() {
   if (s('phone')) ids.push('phone');
   if (s('account')) ids.push('account');
   if (s('chat')) ids.push('money', 'invest', 'privacy', 'avoid');
-  if (s('chat') && (s('claims') || s('company'))) ids.push('mismatch');
+  if (s('chat') && s('company')) ids.push('mismatch');
   if (s('photo')) ids.push('photo');
-  if (s('url') || s('shop')) ids.push('link');
+  if (s('url')) ids.push('link');
   if (s('biz')) ids.push('biz');
-  if (s('biz') || s('shop')) ids.push('commerce');
-  if (s('company') || s('shop')) ids.push('company');
+  if (s('biz')) ids.push('commerce');
+  if (s('company')) ids.push('company');
   if (s('company')) ids.push('job');
   return ids;
 }
@@ -437,12 +437,12 @@ function exactIds() {
   if (v.phone) ids.push('phone');
   if (v.account) ids.push('account');
   if (chat) ids.push('money', 'invest', 'privacy', 'avoid');
-  if (chat && (v.claims || v.company || v.job)) ids.push('mismatch');
+  if (chat && (v.company || v.job)) ids.push('mismatch');
   if (v.photo) ids.push('photo');
   if (siteUrls(v.url).length || hasUrlIn(v.chatText)) ids.push('link');
   if (v.biz) ids.push('biz');
-  if (v.biz || v.shop) ids.push('commerce');
-  if (v.company || v.shop) ids.push('company');
+  if (v.biz) ids.push('commerce');
+  if (v.company) ids.push('company');
   if (v.job) ids.push('job');
   return CONFIG.checks.filter((c) => ids.includes(c.id)).map((c) => c.id);
 }
@@ -450,21 +450,18 @@ function exactIds() {
 W.val = () => {
   const v = W.v;
   const on = (k) => W.sel.has(k);
-  const url = [on('url') ? v.url : '', on('shop') ? v.shopUrl : ''].filter(Boolean).join('\n');
   return {
     phone: on('phone') ? v.phone.trim() : '',
     account: on('account') ? digits(v.account) : '',
     bank: on('account') ? v.bank : '',
-    chatText: on('chat') && v.chatMode === 'text' ? v.chatText.trim() : '',
+    chatText: !on('chat') ? '' : v.chatMode === 'text' ? v.chatText.trim() : v.chatMode === 'file' ? v.chatFileText : '',
     chatImages: on('chat') && v.chatMode === 'image' ? v.chatImages : [],
     photo: on('photo') ? v.photo : '',
-    url: url.trim(),
+    url: on('url') ? v.url.trim() : '',
     company: on('company') ? v.company.trim() : '',
     job: on('company') ? v.job : '',
     workplace: on('company') ? v.workplace.trim() : '',
     biz: on('biz') ? digits(v.biz) : '',
-    shop: on('shop') ? v.shop.trim() : '',
-    claims: on('claims') ? v.claims.trim() : '',
   };
 };
 
@@ -673,8 +670,8 @@ function textarea(key, attrs = {}) {
   el.addEventListener('input', () => { W.v[key] = el.value; });
   return el;
 }
-function dropZone({ multiple, onFiles, title, sub }) {
-  const file = h('input', { type: 'file', accept: 'image/*', multiple: multiple || false, hidden: true, onchange: (e) => { onFiles([...e.target.files]); e.target.value = ''; } });
+function dropZone({ multiple, onFiles, title, sub, accept = 'image/*' }) {
+  const file = h('input', { type: 'file', accept, multiple: multiple || false, hidden: true, onchange: (e) => { onFiles([...e.target.files]); e.target.value = ''; } });
   const zone = h('div', { class: 'drop', role: 'button', tabindex: '0', onclick: () => file.click(), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } } },
     h('b', {}, title), h('span', {}, sub), file);
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
@@ -730,18 +727,120 @@ const STEPS = {
       W.refresh();
     };
     const imgPane = h('div', {}, dropZone({ multiple: true, onFiles: add, title: '대화 캡처를 올려 주세요', sub: '여기에 끌어다 놓거나 눌러서 고릅니다. 붙여넣기도 됩니다. 최대 6장' }), thumbs, err);
+
+    // 카톡 '대화 내보내기' 파일 — 이 기기에서 읽고, 고른 사람은 '나' 나머지는 '상대'로 바꾼 글만 서버로 보낸다(이름은 보내지 않음)
+    const fErr = h('p', { class: 'err-msg', 'aria-live': 'polite' });
+    const fBox = h('div', { class: 'kf' });
+    const applyMe = (me) => {
+      const f = v.chatFile;
+      f.me = me;
+      f.result = toChatText(f.parsed, me);
+      v.chatFileText = f.result.text;
+      paintFile();
+      W.refresh();
+    };
+    const fileDrop = dropZone({
+      multiple: false,
+      accept: '.txt,.csv,.zip,text/plain,text/csv,application/zip',
+      title: '카톡 대화 파일을 올려 주세요',
+      sub: '‘대화 내보내기’로 받은 .txt 파일. 사진까지 든 .zip 도 됩니다',
+      onFiles: async (files) => {
+        fErr.textContent = '';
+        const file = files[0];
+        if (!file) return;
+        try {
+          const parsed = parseKakao(await readChatFile(file));
+          if (!parsed.messages.length) throw new Error('카카오톡 대화 파일 모양이 아니에요. 카카오톡 ‘대화 내보내기’로 받은 .txt 파일을 올려 주세요. 다른 메신저 대화는 ‘글로 붙여넣기’에 넣으면 됩니다.');
+          v.chatFile = { name: file.name, parsed, me: null, result: null };
+          v.chatFileText = '';
+          if (parsed.me) applyMe(parsed.me);
+          else { paintFile(); W.refresh(); }
+        } catch (e) {
+          v.chatFile = null;
+          v.chatFileText = '';
+          fErr.textContent = e.message || '파일을 읽지 못했어요. 다시 올려 주세요.';
+          paintFile();
+          W.refresh();
+        }
+      },
+    });
+    const num = (n) => n.toLocaleString('ko-KR');
+    const paintFile = () => {
+      const f = v.chatFile;
+      fileDrop.hidden = Boolean(f);
+      if (!f) { fBox.replaceChildren(); return; }
+      const p = f.parsed;
+      const r = f.result;
+      const shown = p.participants.slice(0, 12);
+      // replaceChildren 은 null 을 글자로 찍으므로 빈 칸은 걸러서 넣는다
+      fBox.replaceChildren(...[
+        h('div', { class: 'kf-card' },
+          h('div', { class: 'kf-top' }, h('b', { class: 'kf-name' }, f.name),
+            h('button', { type: 'button', class: 'link-btn', onclick: () => { v.chatFile = null; v.chatFileText = ''; fErr.textContent = ''; paintFile(); W.refresh(); } }, '다른 파일')),
+          h('p', { class: 'kf-meta' }, `메시지 ${num(p.messages.length)}개, 대화한 사람 ${num(p.participants.length)}명`),
+          r ? h('p', { class: 'kf-meta w' }, r.trimmed ? `대화가 길어 최근 메시지 ${num(r.used)}개만 분석합니다. ${r.from}부터 ${r.to}까지입니다.` : `${r.from ? `${r.from}부터 ${r.to}까지 ` : ''}메시지 ${num(r.used)}개를 모두 분석합니다.`) : null),
+        h('p', { class: 'kf-q' }, '대화에서 나는 누구인가요?'),
+        h('div', { class: 'chips kf-who', role: 'group', 'aria-label': '대화에서 나' },
+          shown.map((x) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(f.me === x.name), onclick: () => applyMe(x.name) },
+            `${x.name === '회원님' ? '회원님, 나' : x.name} ${num(x.count)}개`)),
+          h('button', { type: 'button', class: 'chip', 'aria-pressed': String(f.me === ''), onclick: () => applyMe('') }, '이 중에 나는 없어요')),
+        p.participants.length > shown.length ? h('p', { class: 'fld-help' }, `말을 많이 한 ${shown.length}명만 보여 드려요. 나머지는 모두 ‘상대’로 봅니다.`) : null,
+        h('p', { class: 'fld-help w' }, '고른 사람의 말은 ‘나’, 나머지는 ‘상대’로 바꿔서 보냅니다. 파일과 이름은 서버로 보내지 않습니다.'),
+      ].filter(Boolean));
+      glueText(fBox);
+      wrapText(fBox);
+    };
+    const howto = h('details', { class: 'kf-how' }, h('summary', {}, '대화 파일 받는 법'),
+      h('p', { class: 'w' }, '휴대폰은 채팅방 오른쪽 위 메뉴, 아래 톱니바퀴, ‘대화 내용 내보내기’, ‘텍스트 메시지만 보내기’ 순서로 누릅니다.'),
+      h('p', { class: 'w' }, 'PC는 채팅방 오른쪽 위 메뉴, ‘대화 내용’, ‘대화 내보내기’ 순서로 눌러 저장합니다.'));
+    const filePane = h('div', {}, fileDrop, fBox, fErr, howto);
+    paintFile();
+
+    // 글로 붙여넣기 — 카톡 PC 에서 복사한 대화([이름] [오후 3:21] …)면 '나'·'상대'로 바꿔 준다
     const txt = textarea('chatText', { placeholder: '상대: 오늘 뭐 해요?\n나: 집이에요. 왜요?\n상대: …', 'aria-label': '대화 글' });
     const long = h('p', { class: 'fld-help fld-bad', hidden: v.chatText.length <= 20000 }, '대화가 길어 앞부분 2만 자까지만 분석해요. 돈 이야기가 나온 부분이 앞에 오도록 넣어 주세요.');
-    txt.addEventListener('input', () => { long.hidden = v.chatText.length <= 20000; });
-    const txtPane = h('div', {}, txt, h('p', { class: 'fld-help' }, '말한 사람을 “상대:”와 “나:”로 적으면 상대가 한 말만 골라 분석합니다.'), long);
-    const seg = h('div', { class: 'seg', role: 'tablist' },
-      ['image', 'text'].map((m) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(v.chatMode === m), onclick: () => { v.chatMode = m; renderStep(0); } }, m === 'image' ? '캡처 올리기' : '글로 붙여넣기')));
+    const conv = h('div', { class: 'kf-conv', hidden: true });
+    const detect = () => {
+      long.hidden = v.chatText.length <= 20000;
+      const p = /^(나|상대)\s*[:：]/m.test(v.chatText) ? null : parseKakao(v.chatText);
+      if (!p || p.messages.length < 2) { conv.hidden = true; return; }
+      const use = (me) => {
+        const r = toChatText(p, me);
+        v.chatText = r.text;
+        txt.value = r.text;
+        conv.hidden = true;
+        long.hidden = true;
+        W.refresh();
+      };
+      conv.replaceChildren(
+        h('p', { class: 'w' }, '카카오톡에서 복사한 대화로 보여요. 나를 고르면 ‘나’와 ‘상대’로 바꾸고 이름은 지웁니다.'),
+        h('div', { class: 'chips' }, p.participants.slice(0, 12).map((x) => h('button', { type: 'button', class: 'chip', onclick: () => use(x.name) }, x.name)),
+          h('button', { type: 'button', class: 'chip', onclick: () => use('') }, '이 중에 나는 없어요')));
+      conv.hidden = false;
+      glueText(conv);
+      wrapText(conv);
+    };
+    let timer = 0;
+    txt.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(detect, 250); });
+    const txtPane = h('div', {}, txt, conv, h('p', { class: 'fld-help' }, '말한 사람을 “상대:”와 “나:”로 적으면 상대가 한 말만 골라 분석합니다.'), long);
+    if (v.chatText) detect();
+
+    const MODES = [['image', '캡처 올리기'], ['file', '카톡 파일'], ['text', '글로 붙여넣기']];
+    const seg = h('div', { class: 'seg seg-3', role: 'tablist' },
+      MODES.map(([m, label]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(v.chatMode === m), onclick: () => { v.chatMode = m; renderStep(0); } }, label)));
     paint();
+    const pane = v.chatMode === 'image' ? imgPane : v.chatMode === 'file' ? filePane : txtPane;
     return {
-      body: [...head('대화를 올려 주세요', '캡처를 올리면 AI가 글자를 읽습니다. 대화를 글로 붙여 넣어도 됩니다.'), seg, v.chatMode === 'image' ? imgPane : txtPane],
+      body: [...head('대화를 올려 주세요', '캡처를 올리면 AI가 글자를 읽습니다. 카톡에서 내보낸 대화 파일이나 복사한 글도 됩니다.'), seg, pane],
       skip: true,
       onPaste: v.chatMode === 'image' ? (e) => { const f = pastedImages(e); if (f.length) { e.preventDefault(); add(f); } } : null,
-      next: { label: '다음', ok: () => (v.chatMode === 'image' ? v.chatImages.length > 0 : v.chatText.trim().length >= 5), why: () => (v.chatMode === 'text' && v.chatText.trim() ? '대화를 조금 더 넣어 주세요. 다섯 글자 이상이면 됩니다.' : ''), go: next },
+      next: {
+        label: '다음',
+        ok: () => (v.chatMode === 'image' ? v.chatImages.length > 0 : v.chatMode === 'file' ? Boolean(v.chatFile?.result) && v.chatFileText.trim().length >= 5 : v.chatText.trim().length >= 5),
+        why: () => (v.chatMode === 'text' && v.chatText.trim() ? '대화를 조금 더 넣어 주세요. 다섯 글자 이상이면 됩니다.'
+          : v.chatMode === 'file' && v.chatFile && !v.chatFile.result ? '대화에서 나를 골라 주세요.' : ''),
+        go: next,
+      },
     };
   },
 
@@ -845,47 +944,16 @@ const STEPS = {
     };
   },
 
-  shop() {
-    const shopUrl = input('shopUrl', { placeholder: '있으면 넣어 주세요', spellcheck: 'false' });
-    const shopHelp = h('p', { class: 'fld-help fld-bad', hidden: !isSnsUrl(W.v.shopUrl) }, 'SNS·블로그 주소는 확인하지 않아요. 쇼핑몰 사이트 주소가 있으면 넣어 주세요.');
-    shopUrl.addEventListener('input', () => { shopHelp.hidden = !isSnsUrl(W.v.shopUrl); });
-    return {
-      body: [...head('쇼핑몰이나 사업체 이름을 알려 주세요', '주소까지 알면 신고 여부와 사이트를 만든 날짜를 함께 확인합니다.'),
-        field('상호', input('shop', { placeholder: '○○몰' })),
-        field('쇼핑몰 주소', shopUrl, shopHelp)],
-      skip: true,
-      next: { label: '다음', ok: () => W.v.shop.trim().length >= 1, go: next },
-    };
-  },
-
-  claims() {
-    const ta = textarea('claims', { class: 'inp sm', placeholder: '예: 강남에 산다고 했어요. 회사를 8년째 운영 중이라고 했어요.' });
-    const chips = h('div', { class: 'chips', style: 'margin-bottom:12px' }, CLAIM_HINTS.map((c) => h('button', {
-      class: 'chip add', type: 'button',
-      onclick: () => { W.v.claims = [W.v.claims.trim(), c].filter(Boolean).join('\n'); ta.value = W.v.claims; ta.focus(); W.refresh(); },
-    }, `+ ${c}`)));
-    return {
-      body: [...head('상대가 자기에 대해 한 말을 적어 주세요', '사는 곳, 직업, 경력, 운영 기간처럼 확인하고 싶은 말을 적어 주세요. 대화와 맞는지 비교합니다.'), chips, ta,
-        // 최소 수집 — 비교에 필요 없는 이름·연락처·계정은 적지 않게(2026-10-26)
-        h('p', { class: 'fld-help' }, '이름, 연락처, SNS 아이디는 적지 않아도 됩니다. 비교에 쓰지 않습니다.')],
-      skip: true,
-      focus: ta,
-      next: { label: '다음', ok: () => W.v.claims.trim().length >= 2, why: () => (W.v.claims.trim() ? '두 글자 이상 적어 주세요.' : ''), go: next },
-    };
-  },
-
   confirm() {
     const v = W.val();
     const mask = {
       phone: () => { const d = digits(v.phone); return d.length >= 8 ? `${d.slice(0, 3)}-****-${d.slice(-4)}` : v.phone; },
-      chat: () => (v.chatImages.length ? `캡처 ${v.chatImages.length}장` : `글 ${v.chatText.length.toLocaleString('ko-KR')}자`),
+      chat: () => (v.chatImages.length ? `캡처 ${v.chatImages.length}장` : W.v.chatMode === 'file' && W.v.chatFile?.result ? `카톡 파일, 메시지 ${W.v.chatFile.result.used.toLocaleString('ko-KR')}개` : `글 ${v.chatText.length.toLocaleString('ko-KR')}자`),
       photo: () => '사진 1장',
       account: () => `${v.bank ? `${v.bank} ` : ''}****${v.account.slice(-4)}`,
       url: () => siteUrls(W.v.url).join(', '),
       company: () => [v.company, v.job, v.workplace].filter(Boolean).join(', '),
       biz: () => fmtBiz(v.biz),
-      shop: () => [v.shop, isSnsUrl(W.v.shopUrl) ? '' : W.v.shopUrl].filter(Boolean).join(', '),
-      claims: () => (v.claims.length > 30 ? `${v.claims.slice(0, 30)}…` : v.claims),
     };
     const rows = INPUTS.filter((x) => W.sel.has(x.key)).map((x) => h('div', { class: 'sum-row' },
       h('dt', {}, x.label), h('dd', {}, mask[x.key]?.() || ''),
@@ -1411,8 +1479,8 @@ async function idb(mode, fn) {
     t.onabort = () => no(t.error);
   });
 }
-// 화면에 보여 줄 모양 그대로 — 링크 칸과 쇼핑몰 주소는 따로 둔다
-const inputSnapshot = () => ({ ...W.val(), url: W.sel.has('url') ? W.v.url.trim() : '', shopUrl: W.sel.has('shop') ? W.v.shopUrl.trim() : '' });
+// 화면에 보여 줄 모양 그대로 — 대화는 '나'·'상대'로 바꾼 글만 남는다(카톡 파일의 이름은 남기지 않음)
+const inputSnapshot = () => ({ ...W.val(), url: W.sel.has('url') ? W.v.url.trim() : '' });
 const saveInputs = (id, exp, v) => idb('readwrite', (st) => st.put({ exp, v }, id)).catch(() => false);
 const deleteInputs = (id) => idb('readwrite', (st) => st.delete(id)).catch(() => false);
 async function loadInputs(id) {
@@ -1462,12 +1530,12 @@ const IN_VIEW = {
   invest: CHAT_VIEW,
   privacy: CHAT_VIEW,
   avoid: CHAT_VIEW,
-  mismatch: { label: '대화·한 말 보기', title: '상대가 한 말과 대화 전체', chat: true, rows: (v) => [['상대가 한 말', v.claims], ['회사명', v.company], ['직업', [v.job, v.workplace].filter(Boolean).join(', ')]] },
+  mismatch: { label: '대화·회사 보기', title: '넣은 회사·직업과 대화 전체', chat: true, rows: (v) => [['회사명', v.company], ['직업', [v.job, v.workplace].filter(Boolean).join(', ')]] },
   photo: { label: '사진 보기', title: '넣은 사진', photo: true },
-  link: { label: '링크 보기', title: '넣은 링크', rows: (v) => [['받은 링크', siteUrls(v.url).join('\n')], ['쇼핑몰 주소', siteUrls(v.shopUrl).join('\n')], ['대화 속 링크', chatUrls(v.chatText).join('\n')]] },
+  link: { label: '링크 보기', title: '넣은 링크', rows: (v) => [['받은 링크', siteUrls(v.url).join('\n')], ['대화 속 링크', chatUrls(v.chatText).join('\n')]] },
   biz: { label: '번호 보기', title: '넣은 사업자등록번호', rows: (v) => [['사업자등록번호', v.biz ? fmtBiz(v.biz) : '']] },
-  commerce: { label: '넣은 정보 보기', title: '넣은 사업자 정보', rows: (v) => [['사업자등록번호', v.biz ? fmtBiz(v.biz) : ''], ['상호', v.shop], ['쇼핑몰 주소', siteUrls(v.shopUrl).join('\n')]] },
-  company: { label: '회사 보기', title: '넣은 회사·상호', rows: (v) => [['회사명', v.company], ['상호', v.shop]] },
+  commerce: { label: '번호 보기', title: '넣은 사업자등록번호', rows: (v) => [['사업자등록번호', v.biz ? fmtBiz(v.biz) : '']] },
+  company: { label: '회사 보기', title: '넣은 회사', rows: (v) => [['회사명', v.company]] },
   job: { label: '직업 보기', title: '넣은 직업', rows: (v) => [['직업', v.job], ['근무하는 병원', v.workplace]] },
 };
 function inputParts(itemId, v) {
@@ -1610,7 +1678,7 @@ function openCasefile(j) {
   const cf = j?.casefile;
   if (!cf) return;
   const sub = cf.subject || {};
-  const info = [['전화번호', sub.phone], ['계좌', sub.account], ['사이트 주소', sub.url], ['회사·상호', sub.company], ['사업자등록번호', sub.biz], ['직업·근무처', sub.job], ['상대가 한 말', sub.claims]].filter(([, v]) => v);
+  const info = [['전화번호', sub.phone], ['계좌', sub.account], ['사이트 주소', sub.url], ['회사', sub.company], ['사업자등록번호', sub.biz], ['직업·근무처', sub.job]].filter(([, v]) => v);
   const sigItems = (j.items || []).filter((i) => i.checkable && !i.locked && (i.signals || []).length);
   const rows = j.timeline && !j.timeline.locked ? j.timeline.rows : [];
   const quoteText = (e) => `${e.before || ''}${e.match || ''}${e.after || ''}`;

@@ -105,10 +105,15 @@ test('9번 링크 — 운영 기간·코인 권유는 AI 가 읽은 값으로(�
   assert.ok(!off.signals.some((s) => /운영기간|원화 거래소/.test(s.title)), JSON.stringify(off.signals.map((s) => s.title)));
 });
 
-test('대화 없이 상대가 한 말 + 링크 — 짧게 AI 에 물어 운영 기간을 비교한다', async () => {
+// 2026-10-26 '상대가 직접 말한 정보'·'쇼핑몰·사업체명' 입력을 뺐다 — 예전 화면이 보내도 AI 에 묻지 않고, 링크 점검도 대화 없이는 운영 기간을 비교하지 않는다
+test('예전 화면이 보낸 상대가 한 말·쇼핑몰 이름은 버린다 — AI 호출 0', async () => {
   process.env.GEMINI_API_KEY = 'test';
   const calls = fakeNet({ ai: { claimedYears: 3, cryptoInvite: false } });
-  const r = await runAnalysis({ url: 'https://lucky-mall.xyz', claims: '쇼핑몰을 3년째 운영 중이라고 했어요' });
-  assert.equal(calls.gemini, 1);
-  assert.ok(item(r, 'link').signals.some((s) => s.title.includes('운영기간 설명과 도메인 생성시점')));
+  const r = await runAnalysis({ url: 'https://lucky-mall.xyz', claims: '쇼핑몰을 3년째 운영 중이라고 했어요', shop: '럭키몰', shopUrl: 'https://lucky-mall.xyz' });
+  assert.equal(calls.gemini, 0);
+  assert.ok(!item(r, 'link').signals.some((s) => s.title.includes('운영기간 설명과 도메인 생성시점')));
+  assert.equal(item(r, 'commerce').checkable, false);
+  assert.equal(item(r, 'company').checkable, false);
+  assert.equal(item(r, 'mismatch').checkable, false);
+  assert.ok(!('claims' in r.subject) && !r.meta.provided.includes('shop') && !r.meta.provided.includes('claims'));
 });

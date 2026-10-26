@@ -72,8 +72,10 @@ test('전화번호 — + 없이 82부터 적어도 국내 번호로 읽는다', 
 });
 
 test('입력 정리 — 사진이 아닌 값과 너무 긴 값은 버린다', () => {
-  const c = cleanInput({ photo: 'javascript:alert(1)', chatImages: ['data:image/png;base64,AAA', 'x'], claims: 'a'.repeat(5000) });
+  const c = cleanInput({ photo: 'javascript:alert(1)', chatImages: ['data:image/png;base64,AAA', 'x'], chatText: 'a'.repeat(30000), claims: 'a'.repeat(5000), shop: '럭키몰', shopUrl: 'https://x.shop' });
   assert.equal(c.photo, '');
   assert.equal(c.chatImages.length, 1);
-  assert.equal(c.claims.length, 1000);
+  assert.equal(c.chatText.length, 20000);
+  // 2026-10-26 뺀 입력 — 받지 않는다
+  assert.ok(!('claims' in c) && !('shop' in c) && !('shopUrl' in c));
 });
