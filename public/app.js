@@ -323,13 +323,13 @@ const INPUTS = [
   { key: 'biz', label: '사업자등록번호', desc: '운영한다는 사업체 번호' },
   { key: 'shop', label: '쇼핑몰·사업체명', desc: '운영한다고 한 곳' },
   { key: 'claims', label: '상대가 직접 말한 정보', desc: '사는 곳, 경력, 운영 기간' },
-  { key: 'name', label: '이름', desc: '교차검증 보조 정보' },
+  // '이름'은 2026-10-26 뺐다 — 분석에 쓰지 않는 정보라 받지 않는다(개인정보 최소 수집, 법 제16조)
 ];
 const STEP_LABEL = { select: '받은 것 선택', confirm: '입력 확인', run: '점검', preview: '점검 결과', pay: '결제' };
 const BANKS = ['KB국민', '신한', '우리', '하나', 'NH농협', 'IBK기업', '카카오뱅크', '토스뱅크', '케이뱅크', '새마을금고', '우체국', '수협', '신협', 'SC제일', '부산', '경남', 'iM뱅크', '광주', '전북', '제주', '기타'];
 const CLAIM_HINTS = ['서울에 산다고 했어요', '해외에서 일한다고 했어요', '회사를 5년째 운영 중이라고 했어요', '돈이 급하다고 했어요'];
 
-const freshValues = () => ({ phone: '', name: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', photo: '', sns: '', url: '', company: '', job: '', workplace: '', biz: '', shop: '', shopUrl: '', claims: '' });
+const freshValues = () => ({ phone: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', photo: '', sns: '', url: '', company: '', job: '', workplace: '', biz: '', shop: '', shopUrl: '', claims: '' });
 const W = { sel: new Set(), v: freshValues(), steps: ['select'], i: 0, consent: [false, false], id: null, preview: null, plan: 'full', opened: false, lastFocus: null };
 
 const digits = (s) => String(s || '').replace(/\D/g, '');
@@ -396,7 +396,6 @@ W.val = () => {
   const url = [on('url') ? v.url : '', on('shop') ? v.shopUrl : ''].filter(Boolean).join('\n');
   return {
     phone: on('phone') ? v.phone.trim() : '',
-    name: on('name') ? v.name.trim() : '',
     account: on('account') ? digits(v.account) : '',
     bank: on('account') ? v.bank : '',
     chatText: on('chat') && v.chatMode === 'text' ? v.chatText.trim() : '',
@@ -640,13 +639,6 @@ const STEPS = {
     };
   },
 
-  name() {
-    return {
-      body: [...head('상대가 알려 준 이름을 입력해 주세요', '이름만으로는 찾지 않습니다. 번호나 계좌가 나온 글에 같은 이름이 있는지 볼 때만 씁니다.'), field('이름', input('name', { placeholder: '홍길동', maxlength: 30 }))],
-      skip: true,
-      next: { label: '다음', ok: () => W.v.name.trim().length >= 1, go: next },
-    };
-  },
 
   chat() {
     const v = W.v;
@@ -823,7 +815,6 @@ const STEPS = {
     const v = W.val();
     const mask = {
       phone: () => { const d = digits(v.phone); return d.length >= 8 ? `${d.slice(0, 3)}-****-${d.slice(-4)}` : v.phone; },
-      name: () => `${v.name.slice(0, 1)}${'*'.repeat(Math.max(1, v.name.length - 1))}`,
       chat: () => (v.chatImages.length ? `캡처 ${v.chatImages.length}장` : `글 ${v.chatText.length.toLocaleString('ko-KR')}자`),
       photo: () => '사진 1장',
       account: () => `${v.bank ? `${v.bank} ` : ''}****${v.account.slice(-4)}`,
@@ -840,10 +831,13 @@ const STEPS = {
     const ids = exactIds();
     const boxes = ['상대방에게 직접 받은 정보만 입력했습니다.', '분석이 끝나면 입력한 원본이 자동으로 삭제되는 것을 확인했습니다.'].map((t, k) => h('label', { class: 'consent' },
       h('input', { type: 'checkbox', checked: W.consent[k], onchange: (e) => { W.consent[k] = e.target.checked; } }), h('span', {}, t)));
+    // 생성형 AI 사전 고지(AI기본법 제31조 제1항, 2026-01-22 시행) — 대화·사진을 고른 경우에만 AI 를 쓰므로 그때 보여 준다
+    const usesAi = W.sel.has('chat') || W.sel.has('photo');
     return {
       body: [...head('이대로 무료 점검을 시작할까요?', '번호·링크·사업자 결과는 무료로 바로 보여 드리고, 대화에서 찾은 신호 수도 알려 드립니다.'),
         h('dl', { class: 'sum' }, rows),
         h('p', { class: 'pv-line' }, `총 13개 항목 중 ${ids.length}개 검사 가능`),
+        usesAi ? h('p', { class: 'ai-note w' }, h('b', {}, '생성형 AI 사용 안내'), ' 대화와 사진은 생성형 AI인 구글 제미나이로 분석하고, 대화 캡처의 글자도 AI가 읽습니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.') : null,
         boxes],
       next: { label: '무료 점검 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next() },
     };
@@ -1232,6 +1226,10 @@ function linkRow(links, itemId) {
   ];
 }
 
+// 'AI 생성' 표시 — 생성형 AI(제미나이)가 쓴 설명(by: 'ai')에 붙인다. AI기본법 제31조 제2항(결과물 표시), 2026-01-22 시행
+const aiChip = (s) => (s?.by === 'ai' ? h('span', { class: 'chip-ai', title: '생성형 AI인 구글 제미나이가 작성한 설명입니다' }, 'AI 생성') : null);
+const hasAiText = (items) => (items || []).some((i) => !i.locked && [...(i.signals || []), ...(i.facts || [])].some((s) => s.by === 'ai'));
+
 function itemCard(it, id) {
   const [cls, txt] = (STATUS_CHIP[it.status] || STATUS_CHIP.clear)(it);
   const card = h('article', { class: `it ${it.status}${it.locked ? ' locked' : ''}` },
@@ -1248,13 +1246,13 @@ function itemCard(it, id) {
   }
   for (const s of it.signals || []) {
     card.append(h('div', { class: 'sg' },
-      h('div', { class: 'sg-t' }, h('span', { class: `chip-st ${s.level === 'signal' ? 'st-signal' : 'st-note'}` }, s.level === 'signal' ? '확인 신호' : '참고'), h('span', {}, glue(s.title))),
+      h('div', { class: 'sg-t' }, h('span', { class: `chip-st ${s.level === 'signal' ? 'st-signal' : 'st-note'}` }, s.level === 'signal' ? '확인 신호' : '참고'), aiChip(s), h('span', {}, glue(s.title))),
       h('p', { class: 'w' }, s.text),
       (s.evidence || []).map(quote),
       s.sources?.length ? srcList(s.sources) : null,
       linkRow(s.links, it.id)));
   }
-  if (it.facts?.length) card.append(h('ul', { class: 'facts' }, it.facts.map((f) => h('li', {}, h('span', { class: 'w' }, f.text), f.sources?.length ? srcList(f.sources) : null))));
+  if (it.facts?.length) card.append(h('ul', { class: 'facts' }, it.facts.map((f) => h('li', {}, aiChip(f), h('span', { class: 'w' }, f.text), f.sources?.length ? srcList(f.sources) : null))));
   // 예전 리포트에 남은 '더치트 API 제휴 계약 뒤' 안내는 보이지 않게 한다(지금은 직접 조회 안내로 바뀜)
   const pend = (it.pending || []).filter((p) => p.label !== '더치트 API');
   if (pend.length) card.append(h('div', { class: 'pend' }, pend.map((p) => h('div', {}, h('b', {}, glue(p.label)), glue(p.text)))));
@@ -1381,7 +1379,7 @@ function openCasefile(j) {
       h('p', { class: 'cf-eyebrow' }, 'DATE CHECK'),
       h('h1', {}, '사이버사기 신고용 정리본'),
       h('p', {}, `작성 ${ymdText(new Date())} · 점검 ${ymdText(new Date(j.createdAt))}`)),
-    h('p', { class: 'cf-disc w' }, '받은 메시지와 정보를 DATE CHECK가 분석한 결과를 정리한 참고 자료입니다. 사기 여부는 수사기관이 판단합니다.'),
+    h('p', { class: 'cf-disc w' }, `받은 메시지와 정보를 DATE CHECK가 분석한 결과를 정리한 참고 자료입니다. 사기 여부는 수사기관이 판단합니다.${hasAiText(sigItems) ? ' ‘AI 생성’ 표시는 생성형 AI가 작성한 내용입니다.' : ''}`),
     h('h2', {}, '1. 상대방 정보'),
     info.length ? h('dl', { class: 'cf-dl' }, info.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : h('p', { class: 'cf-empty' }, '입력한 상대방 정보가 없습니다.'),
     h('h2', {}, '2. 대화에서 확인된 내용'),
@@ -1389,7 +1387,7 @@ function openCasefile(j) {
       : h('p', { class: 'cf-empty' }, j.plan === 'full' ? '돈 이야기나 확인 신호가 나온 말은 없었습니다.' : '대화 순서 정리는 정밀 분석에 들어 있습니다.'),
     h('h2', {}, '3. 확인 신호 요약'),
     sigItems.length ? h('ul', { class: 'cf-sig' }, sigItems.flatMap((i) => i.signals.map((s) => h('li', {},
-      h('b', {}, `${i.title} · ${s.title}`),
+      h('b', {}, `${i.title} · ${s.title}${s.by === 'ai' ? ' · AI 생성' : ''}`),
       (s.evidence || []).slice(0, 2).map((e) => h('q', {}, quoteText(e))))))) : h('p', { class: 'cf-empty' }, '확인 신호가 없었습니다.'),
     h('h2', {}, '4. 송금 기록'),
     h('p', { class: 'cf-hint' }, '보낸 돈이 있다면 직접 적어 주세요.'),
@@ -1490,6 +1488,8 @@ async function showReport(id) {
         h('div', {}, nP, h('span', {}, '연동 준비 중 항목'))))),
     h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
       h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '분석 결과는 상대방의 신원·안전성을 보증하지 않습니다.'), ' 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
+      // .w 안의 span 은 wrap.js 가 다시 짜면서 표시 모양이 벗겨진다 → 따옴표 글자로
+      hasAiText(items) ? h('p', { class: 'rp-ai w' }, '‘AI 생성’ 표시가 붙은 설명은 생성형 AI인 구글 제미나이가 작성했습니다. 근거 문장은 입력한 대화에 실제로 있는 문장만 보여 드리며, 캡처의 글자는 AI가 읽은 것이라 원본 캡처와 함께 확인하세요.') : null,
       j.meta?.notes?.length ? h('p', { class: 'rp-notes' }, j.meta.notes.join(' ')) : null,
       timelineSec(j),
       sec('확인 신호가 있는 항목', group('signal'), '사기에서 자주 보이는 흔적입니다. 근거를 직접 읽어 보세요.'),
@@ -1563,6 +1563,8 @@ function openPrivacy() {
       '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 저장하지 않고 파기합니다.',
       '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 점검한 기기에만 24시간 보관하고 자동으로 지웁니다.',
       'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 사진 도용 확인을 위해 사진을 구글 Cloud Vision 웹 검색으로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
+      '대화·사진 분석에는 생성형 AI를 씁니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.',
+      '분석 서버는 서울 지역에서 돌아갑니다. 이름은 분석에 쓰지 않아 입력받지 않습니다.',
       '공개 글 검색은 저희가 대신 하지 않습니다. 네이버 버튼을 누르면 이용자 브라우저에서 네이버 검색 결과가 열립니다.',
       '성범죄자 공개정보와 범죄경력 정보는 저장하지 않습니다.',
       '관리자 화면에서도 원본 개인정보는 볼 수 없고, 관리자 접속은 기록으로 남습니다.',
