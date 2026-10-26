@@ -1452,8 +1452,9 @@ function askForget(id) {
 const EXAMPLE_ID = 'example';
 let REPORT_INPUTS = null;
 let REPORT_IS_EXAMPLE = false;
+let REPORT_ITEMS = [];
 const chatUrls = (t) => (String(t || '').match(URL_IN) || []).filter((u) => !isSnsUrl(u));
-const CHAT_VIEW = { label: '대화 보기', title: '넣은 대화', chat: true };
+const CHAT_VIEW = { label: '대화 전체 보기', title: '대화 전체 보기', chat: true };
 const IN_VIEW = {
   phone: { label: '번호 보기', title: '넣은 전화번호', rows: (v) => [['전화번호', v.phone]] },
   account: { label: '계좌 보기', title: '넣은 계좌번호', rows: (v) => [['은행', v.bank], ['계좌번호', v.account]] },
@@ -1461,7 +1462,7 @@ const IN_VIEW = {
   invest: CHAT_VIEW,
   privacy: CHAT_VIEW,
   avoid: CHAT_VIEW,
-  mismatch: { label: '대화·한 말 보기', title: '넣은 대화와 상대가 한 말', chat: true, rows: (v) => [['상대가 한 말', v.claims], ['회사명', v.company], ['직업', [v.job, v.workplace].filter(Boolean).join(', ')]] },
+  mismatch: { label: '대화·한 말 보기', title: '상대가 한 말과 대화 전체', chat: true, rows: (v) => [['상대가 한 말', v.claims], ['회사명', v.company], ['직업', [v.job, v.workplace].filter(Boolean).join(', ')]] },
   photo: { label: '사진 보기', title: '넣은 사진', photo: true },
   link: { label: '링크 보기', title: '넣은 링크', rows: (v) => [['받은 링크', siteUrls(v.url).join('\n')], ['쇼핑몰 주소', siteUrls(v.shopUrl).join('\n')], ['대화 속 링크', chatUrls(v.chatText).join('\n')]] },
   biz: { label: '번호 보기', title: '넣은 사업자등록번호', rows: (v) => [['사업자등록번호', v.biz ? fmtBiz(v.biz) : '']] },
@@ -1482,12 +1483,57 @@ function inputBtn(it) {
   if (!p) return null;
   return h('button', { class: 'it-in', type: 'button', onclick: () => openInputs(p) }, p.view.label);
 }
+// 대화 전체를 메신저처럼 — 상대 말은 왼쪽, 내 말은 오른쪽. AI 가 확인 신호로 짚은 말은 테두리와 신호 이름으로 표시한다.
+// 창 안에서 스크롤해 끝까지 본다. '[10월 3일]'처럼 대괄호만 있는 줄은 날짜 구분선으로 보여 준다.
+const CHAT_ITEM_IDS = ['money', 'invest', 'privacy', 'avoid', 'mismatch'];
+function chatQuotes() {
+  const out = [];
+  for (const it of REPORT_ITEMS) {
+    if (!CHAT_ITEM_IDS.includes(it.id) || it.locked) continue;
+    for (const s of it.signals || []) for (const e of s.evidence || []) if (e?.match?.trim().length >= 2) out.push({ q: e.match.trim(), title: s.title });
+  }
+  return out;
+}
+function markIn(body, hits) {
+  const q = hits.map((x) => x.q).sort((a, b) => b.length - a.length)[0];
+  const at = q ? body.indexOf(q) : -1;
+  return at < 0 ? body : [body.slice(0, at), h('mark', {}, q), body.slice(at + q.length)];
+}
+function chatView(text) {
+  const quotes = chatQuotes();
+  const lines = String(text || '').split('\n').map((t) => t.trim()).filter(Boolean);
+  const marked = lines.some((l) => /^(나|상대)\s*[:：]/.test(l));
+  let talk = 0;
+  let flagged = 0;
+  let prev = '';
+  const rows = lines.map((l) => {
+    if (/^\[[^\]]{1,30}\]$/.test(l)) { prev = ''; return h('p', { class: 'cv-day' }, l.slice(1, -1)); }
+    talk += 1;
+    const me = marked && /^나\s*[:：]/.test(l);
+    const who = me ? '나' : '상대';
+    const showWho = marked && who !== prev;
+    prev = who;
+    const body = l.replace(/^(나|상대)\s*[:：]\s*/, '');
+    const hits = me ? [] : quotes.filter((x) => body.includes(x.q));
+    if (hits.length) flagged += 1;
+    return h('div', { class: `cv-row${me ? ' me' : ''}${hits.length ? ' hit' : ''}` },
+      showWho ? h('span', { class: 'cv-who' }, who) : null,
+      h('div', { class: 'cv-b' }, markIn(body, hits)),
+      hits.length ? h('span', { class: 'cv-tag' }, [...new Set(hits.map((x) => x.title))].slice(0, 2).join(' · ')) : null);
+  });
+  return [
+    h('p', { class: 'in-lbl' }, `대화 ${talk}줄${flagged ? ` · AI가 짚은 말 ${flagged}곳은 분홍 테두리` : ''} · 위아래로 넘겨 보세요`),
+    h('div', { class: 'cv', tabindex: '0', 'aria-label': '대화 전체' }, rows),
+  ];
+}
 function openInputs({ view, rows, chat, photo }) {
+  const credit = REPORT_IS_EXAMPLE && photo ? REPORT_INPUTS?.photoCredit : null;
   sheet(h('h2', {}, view.title),
     h('p', { class: 'w' }, REPORT_IS_EXAMPLE ? '예시 리포트에 쓴 시험용 자료입니다.' : '이 기기에만 리포트와 함께 24시간 보관합니다. 서버에는 저장하지 않습니다.'),
     photo ? h('img', { class: 'in-img', src: photo, alt: '넣은 사진' }) : null,
+    credit?.text ? h('p', { class: 'in-credit' }, credit.url ? h('a', { href: credit.url, target: '_blank', rel: 'noopener noreferrer' }, credit.text) : credit.text) : null,
     rows.length ? h('dl', { class: 'in-dl' }, rows.map(([k, x]) => [h('dt', {}, k), h('dd', {}, x)])) : null,
-    chat?.chatText ? [h('p', { class: 'in-lbl' }, '대화'), h('div', { class: 'in-chat', tabindex: '0' }, chat.chatText)] : null,
+    chat?.chatText ? chatView(chat.chatText) : null,
     chat?.chatImages?.length ? [h('p', { class: 'in-lbl' }, `대화 캡처 ${chat.chatImages.length}장`), chat.chatImages.map((src, k) => h('img', { class: 'in-img', src, alt: `대화 캡처 ${k + 1}` }))] : null);
 }
 
@@ -1527,9 +1573,11 @@ function timelineSec(j) {
       h('p', { class: 'w' }, `상대가 한 말 가운데 확인할 말 ${tl.count}줄을 대화 순서대로 정리했습니다. 처음 돈 이야기가 나온 곳도 짚어 드립니다.`),
       h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(j.id) }, `정밀 분석 열기 · ${OFFER.full ? won(OFFER.full) : priceText('full')}`)));
   }
+  const whole = inputParts('money', REPORT_INPUTS);
   return h('section', { class: 'rp-sec' },
-    h('h2', { class: 'rp-sec-t' }, '대화 순서 정리', h('small', {}, tl.rows.length ? `전체 ${tl.total}줄 중 ${tl.rows.length}줄` : `전체 ${tl.total}줄`)),
-    h('p', { class: 'w sec-desc' }, tl.rows.length ? '상대가 한 말 가운데 확인 신호나 금액이 나온 말만 순서대로 모았습니다.' : '상대가 한 말에서 돈 이야기나 확인 신호가 나온 말은 없었습니다.'),
+    h('h2', { class: 'rp-sec-t' }, '대화 순서 정리', h('small', {}, tl.rows.length ? `전체 ${tl.total}줄 중 ${tl.rows.length}줄` : `전체 ${tl.total}줄`),
+      whole ? h('button', { class: 'it-in tl-all', type: 'button', onclick: () => openInputs(whole) }, '대화 전체 보기') : null),
+    h('p', { class: 'w sec-desc' }, tl.rows.length ? '상대가 한 말 가운데 AI가 확인 신호로 짚은 말만 순서대로 모았습니다.' : '상대가 한 말에서 AI가 확인 신호로 짚은 말은 없었습니다.'),
     tl.rows.length ? h('ol', { class: 'tl' }, tl.rows.map((r) => h('li', { class: r.firstMoney ? 'first' : '' },
       h('span', { class: 'tl-n' }, `${r.n}번째 말`),
       h('div', { class: 'tl-b' },
@@ -1618,7 +1666,7 @@ async function showReport(id) {
       const r = await fetch('/example-report.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error(String(r.status));
       const d = await r.json();
-      j = { ...d.report, exampleInputs: d.inputs };
+      j = { ...d.report, exampleInputs: d.inputs, exampleNote: d.note || '' };
       reportCache.set(id, j);
     } catch {
       error = '예시 리포트를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.';
@@ -1653,6 +1701,7 @@ async function showReport(id) {
 
   REPORT_IS_EXAMPLE = example;
   REPORT_INPUTS = example ? j.exampleInputs : await loadInputs(id);
+  REPORT_ITEMS = j.items || [];
   const canForget = !example && Boolean(storedReport(id) || REPORT_INPUTS);
   OFFER = j.offers || {};
   const t = j.totals;
@@ -1696,7 +1745,7 @@ async function showReport(id) {
         h('div', {}, nNote, h('span', {}, '참고')),
         h('div', {}, nP, h('span', {}, retrying ? '다시 확인할 항목' : '연동 준비 중 항목'))))),
     h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
-      example ? h('p', { class: 'notice w rp-example' }, h('b', {}, '예시 리포트입니다.'), ' 실제 사람이 아니라 시험용으로 꾸민 대화·번호·사진(모나리자)으로 만든 결과입니다. 카드 제목 옆 버튼을 누르면 넣은 정보를 볼 수 있습니다.') : null,
+      example ? h('p', { class: 'notice w rp-example' }, h('b', {}, '예시 리포트입니다.'), ` ${j.exampleNote || '시험용으로 꾸민 자료로 만든 결과입니다.'} 카드 제목 옆 버튼을 누르면 넣은 정보를 볼 수 있습니다.`) : null,
       h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '분석 결과는 상대방의 신원·안전성을 보증하지 않습니다.'), ' 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
       // .w 안의 span 은 wrap.js 가 다시 짜면서 표시 모양이 벗겨진다 → 따옴표 글자로
       hasAiText(items) ? h('p', { class: 'rp-ai w' }, '‘AI 생성’ 표시가 붙은 설명은 생성형 AI인 구글 제미나이가 작성했습니다. 근거 문장은 입력한 대화에 실제로 있는 문장만 보여 드리며, 캡처의 글자는 AI가 읽은 것이라 원본 캡처와 함께 확인하세요.') : null,
