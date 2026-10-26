@@ -92,7 +92,7 @@ Node 20 이상, 외부 패키지 없음. 키는 `.env.local`.
 
 - 원본(번호·사진·대화)은 분석이 끝나면 서버에서 버린다. 디스크에 쓰지 않는다.
 - 리포트에서 넣은 정보를 다시 볼 수 있게(카드 제목 옆 '사진 보기'·'대화 보기' 등, 2026-10-26 오너) 화면이 결제 직후 원본을 **점검한 기기의 IndexedDB**(datecheck/inputs)에 리포트와 같은 24시간 둔다. 서버로는 다시 보내지 않는다. 리포트 아래 '이 기기에서 지우기'로 바로 지운다.
-- 예시 리포트 `/report/example` = public/example-report.json(시험용으로 꾸민 자료, 번호 010-0000-0000·사진 모나리자). 다시 만들 때는 C:/tmp/datecheck-test/full/capture.mjs → make-example.mjs.
+- 예시 리포트 `/report/example` = public/example-report.json(대화 43줄·번호 010-0000-0000 은 꾸민 자료, 사진은 사기에 자주 도용되는 유명인 사진의 예로 키아누 리브스 — 위키미디어 공용 CC BY-SA 4.0, Marybel Le Pape. 출처는 사진 창에 링크로, 안내 문구는 json note. 2026-10-26 오너가 연예인 사진으로 결정(초상권·퍼블리시티권 위험 안내 뒤)). 다시 만들 때는 C:/tmp/datecheck-test/full/capture.mjs → make-example.mjs.
 - 리포트는 서버에 저장하지 않는다. 결과를 서버만 풀 수 있는 암호화 봉투(lib/token.mjs, AES-256-GCM)로 만들어 이용자 기기(localStorage)에 둔다. 결제 전 1시간·결제 후 24시간이 지나면 서버가 열어 주지 않고, 기기에서도 지운다. 그래서 리포트는 검증한 기기에서만 열린다.
 - `data/` 에는 개인정보 없는 집계(퍼널·API 호출·파기 건수)와 삭제요청·문의, 관리자 접근 로그만 남는다.
 
