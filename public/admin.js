@@ -29,7 +29,7 @@ const won = (n) => (n == null ? '—' : `${Math.round(n).toLocaleString('ko-KR')
 const pct = (r) => (r == null ? '—' : `${(r * 100).toFixed(r < 0.1 ? 1 : 0)}%`);
 const num = (n) => (n || 0).toLocaleString('ko-KR');
 const time = (t) => { const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const API_NAME = { naver: '네이버 검색 (예전 기록, 지금은 쓰지 않음)', vision: '구글 Vision 사진 웹 검색', whois: 'KISA WHOIS · RDAP', gemini: '제미나이 AI 분석', nts: '국세청 사업자 상태', thecheat: '더치트' };
+const API_NAME = { naver: '네이버 검색 (예전 기록, 지금은 쓰지 않음)', vision: '구글 Vision 사진 웹 검색', whois: 'KISA WHOIS · RDAP', gemini: '제미나이 AI 분석', nts: '국세청 사업자 상태', ftc_mail: '공정위 통신판매사업자', ftc_door: '공정위 방문판매사업자', fsc_corp: '금융위 기업기본정보', hira: '심평원 병원정보', thecheat: '더치트' };
 const TYPE = { delete: '삭제 요청', inquiry: '문의', report: '신고' };
 
 function login(msg) {
