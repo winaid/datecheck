@@ -41,6 +41,7 @@ Node 20 이상, 외부 패키지 없음. 키는 `.env.local`.
 - **입력** — '다음'이 안 눌리면 이유 한 줄(`next.why`). 사진이 아닌 파일·HEIC·너무 큰 사진 안내. 대화 글 2만 자 넘으면 미리 알림.
 - **저장이 막힌 브라우저** — 시작은 그대로 되고, 리포트 위에 'PDF로 저장' 안내(`unsaved`).
 - **조회 서버가 잠깐 응답하지 않음** — `busy()`(lib/sources.mjs) 로 '무엇을 못 했는지 + 지금 할 수 있는 일(공식 화면 버튼)'. 이런 칸만 남은 항목은 상태 `retry` → '다시 확인 필요', 리포트 '잠시 확인하지 못한 항목' 구역. 키가 없어 못 하는 `pending`(연동 준비 중)과 구분. 공공데이터·국세청 조회는 연결 오류·5xx 한 번 더, 302 는 따라가지 않고 두 번까지 다시.
+- **확인할 자료가 없는 칸** — 계좌처럼 자동으로 조회할 공식 자료가 없어 확인한 사실이 0건이면 `clear`(특이사항 없음)가 아니라 `manual` → '직접 확인 필요', 리포트 '직접 확인할 항목' 구역(2026-10-27 — 사기 계좌도 초록 칩으로 읽히던 것). 넣은 값을 되풀이한 문장은 tip.
 - **AI 실패** — 캡처 글자 읽기·대화 분석·사진 관찰이 안 되면 무엇을 못 봤는지와 대신 할 일을 알림줄로. 대화 분석은 한 번 다시 묻고(함수 60초 안), 그래도 안 되면 대화 항목 3~7 은 '다시 확인 필요'(규칙으로 대신하지 않는다). 사진 웹 검색 결과는 그대로.
 - **없는 주소** — public/404.html (Vercel 이 알아서, PC 서버도 같게).
 - 점검: C:/tmp/datecheck-test/err/errors.mjs (BASE·W, 28가지), tests/fallback.test.mjs.
@@ -125,7 +126,9 @@ Node 20 이상, 외부 패키지 없음. 키는 `.env.local`.
 
 - 구조: 화면 파일은 `public/` 을 그대로 내보내고, `/api/*` 는 `api/index.mjs` 함수 하나가 받는다(`vercel.json` rewrites, 최대 60초). 처리 코드는 PC 서버와 같은 `lib/app.mjs`.
 - PC 서버 파일 이름을 `server.mjs` 로 두면 Vercel 이 서버로 잘못 잡으므로 `dev.mjs` 로 둔다.
-- Vercel 프로젝트 설정 → Environment Variables 에 넣을 것: `GEMINI_API_KEY`, `GEMINI_MODEL`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `ADMIN_KEY`, `REPORT_SECRET`(긴 임의 문자열). 넣지 않으면 대화 항목은 '연동 준비 중'으로 나온다(규칙으로 대신 판별하지 않는다).
+- Vercel 프로젝트 설정 → Environment Variables 에 넣을 것: `GEMINI_API_KEY`, `GEMINI_MODEL`, `ADMIN_KEY`, `REPORT_SECRET`(긴 임의 문자열 — ★운영에서 없으면 점검이 멈춘다, 대체값 안 씀), `DATA_GO_KR_KEY`, `GOOGLE_VISION_API_KEY`. 네이버 키는 2026-10-22 네이버 검색 API 를 뺀 뒤 쓰지 않는다. 제미나이 키가 없으면 대화 항목은 '연동 준비 중'으로 나온다(규칙으로 대신 판별하지 않는다).
+- **보안·남용 막기(2026-10-27)** — `vercel.json` 이 모든 응답에 CSP(스크립트는 자기 사이트만, 글꼴은 jsdelivr, 사진은 data·blob)·X-Frame-Options DENY·nosniff·Referrer-Policy·Permissions-Policy. 횟수 제한 `LIMITS`(lib/app.mjs): 점검 같은 접속 주소 10분 12번·하루 60번, 문의 한 시간 5번, 관리자 키 틀림 15분 10번 — 함수 인스턴스마다 세는 1차 방어(영구 저장소를 붙이면 그쪽으로). 화면이 보내는 이벤트는 `CLIENT_EVENTS` 만 받는다(결제·매출 이벤트는 서버만). AI 지시문은 systemInstruction, 대화·캡처·사진은 자료로만(프롬프트 주입 막기).
+- 구글 서치콘솔: index.html 의 google-site-verification 메타는 자동화 계정(winaid-automation) 소유 확인용 — 지우면 소유권이 풀린다.
 - 요청 크기 한도 4.5MB — 화면이 캡처를 긴 변 1600px 로 줄이고, 넘으면 미리 막는다.
 - 집계·문의·관리자 로그는 Vercel 에서 임시 폴더(/tmp)에 쌓여 함수가 다시 시작되면 사라진다. 정식 운영 전에 Upstash Redis 같은 저장소 연결이 필요하다(관리자 화면에 표시됨).
 

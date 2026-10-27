@@ -42,7 +42,8 @@ const glue = (s) => String(s || '').replace(/([^\s⁠])([·ㆍ/])(?=[^\s⁠])/g,
 // 화면을 그린 뒤 런타임(.w) 밖의 글자도 같은 방식으로 묶는다
 function glueText(root = document.body) {
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement?.closest('.w, script, style, textarea, input, .srcs, .quote, .cpy') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    // .cf-doc(신고용 정리본)은 번호·주소를 복사해 신고 양식에 붙이므로 보이지 않는 묶음 글자를 넣지 않는다(2026-10-27)
+    acceptNode: (n) => (n.parentElement?.closest('.w, script, style, textarea, input, .srcs, .quote, .cpy, .cf-doc') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
   const nodes = [];
   while (w.nextNode()) nodes.push(w.currentNode);
@@ -145,7 +146,7 @@ const NEED = {
   invest: { need: '카톡·DM 대화', g: 'chat' },
   privacy: { need: '카톡·DM 대화', g: 'chat' },
   avoid: { need: '카톡·DM 대화', g: 'chat' },
-  mismatch: { need: '대화와 회사·직업', g: 'chat' },
+  mismatch: { need: '카톡·DM 대화', g: 'chat' }, // 대화 속 말끼리도 본다(서버 needs 와 같게, 2026-10-27)
   photo: { need: '상대방 사진', g: 'photo' },
   link: { need: '상대가 보낸 사이트 주소', g: 'link' },
   biz: { need: '사업자등록번호', g: 'biz' },
@@ -419,8 +420,7 @@ function estimateIds() {
   const ids = [];
   if (s('phone')) ids.push('phone');
   if (s('account')) ids.push('account');
-  if (s('chat')) ids.push('money', 'invest', 'privacy', 'avoid');
-  if (s('chat') && s('company')) ids.push('mismatch');
+  if (s('chat')) ids.push('money', 'invest', 'privacy', 'avoid', 'mismatch');
   if (s('photo')) ids.push('photo');
   if (s('url')) ids.push('link');
   if (s('biz')) ids.push('biz');
@@ -436,8 +436,7 @@ function exactIds() {
   const ids = [];
   if (v.phone) ids.push('phone');
   if (v.account) ids.push('account');
-  if (chat) ids.push('money', 'invest', 'privacy', 'avoid');
-  if (chat && (v.company || v.job)) ids.push('mismatch');
+  if (chat) ids.push('money', 'invest', 'privacy', 'avoid', 'mismatch');
   if (v.photo) ids.push('photo');
   if (siteUrls(v.url).length || hasUrlIn(v.chatText)) ids.push('link');
   if (v.biz) ids.push('biz');
@@ -897,11 +896,13 @@ const STEPS = {
     const medical = () => /의사|간호사|약사/.test(v.job);
     const work = field('근무하는 병원', input('workplace', { placeholder: '○○병원' }));
     work.hidden = !medical();
+    // 글자(textContent)로 비교하지 않는다 — glueText 가 가운뎃점 옆에 보이지 않는 묶음 글자를 넣어
+    // '의사·치과의사·한의사' 같은 칩이 눌러도 선택 표시가 안 켜지던 것(2026-10-27)
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': '직업' }, (CONFIG.jobs || []).map((j) => h('button', {
-      class: 'chip', type: 'button', 'aria-pressed': String(v.job === j),
+      class: 'chip', type: 'button', 'aria-pressed': String(v.job === j), 'data-v': j,
       onclick: (e) => {
         v.job = v.job === j ? '' : j;
-        $$('.chip', chips).forEach((c) => c.setAttribute('aria-pressed', String(c.textContent === v.job)));
+        $$('.chip', chips).forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.v === v.job)));
         work.hidden = !medical();
         W.refresh();
       },
@@ -998,7 +999,7 @@ const STEPS = {
     const fullItems = items.filter((i) => i.plan === 'full');
     const fullSignals = fullItems.reduce((s, i) => s + i.signalCount, 0);
     const freeSignals = items.filter((i) => i.plan !== 'full').reduce((s, i) => s + i.signalCount, 0);
-    const chip = (i) => (i.status === 'signal' ? ['st-signal', `확인 신호 ${i.signalCount}건`] : i.status === 'note' ? ['st-note', `참고 ${i.noteCount}건`] : i.status === 'retry' ? ['st-pending', '다시 확인 필요'] : i.status === 'pending' ? ['st-pending', '연동 준비 중'] : ['st-clear', '특이사항 없음']);
+    const chip = (i) => (STATUS_CHIP[i.status] || STATUS_CHIP.clear)(i);
     const nN = h('b', {}, '0');
     const nS = h('b', {}, '0');
     // 정밀 분석으로 볼 것이 없으면(대화·사진 없음) 무료 점검을 먼저 고른다
@@ -1181,6 +1182,8 @@ const STATUS_CHIP = {
   clear: () => ['st-clear', '특이사항 없음'],
   pending: () => ['st-pending', '연동 준비 중'],
   retry: () => ['st-pending', '다시 확인 필요'],
+  // 자동으로 조회할 공식 자료가 없는 칸(계좌 등) — 초록 '특이사항 없음'으로 읽히지 않게(2026-10-27)
+  manual: () => ['st-pending', '직접 확인 필요'],
   na: () => ['st-na', '검사하지 않음'],
 };
 
@@ -1380,7 +1383,7 @@ function itemCard(it, id) {
   if (it.locked) {
     card.append(h('div', { class: 'lock-cover' },
       h('p', { class: 'w' }, it.signalCount ? `이 항목에서 확인 신호 ${it.signalCount}건이 나왔습니다. 근거 문장은 정밀 분석에서 볼 수 있습니다.` : '이 항목의 근거와 상세 내용은 정밀 분석에서 볼 수 있습니다.'),
-      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(id) }, `정밀 분석 열기 · ${OFFER.full ? won(OFFER.full) : priceText('full')}`)));
+      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(id) }, `정밀 분석 열기 · ${upgradePrice()}`)));
     return card;
   }
   for (const s of it.signals || []) {
@@ -1416,7 +1419,7 @@ const reportCache = new Map();
 const unsaved = new Set();
 function keepReport(j) {
   try {
-    localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt, plan: j.report?.plan || null, paidAt: j.report?.paidAt || null }));
+    localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt, plan: j.report?.plan || null, paidAt: j.report?.paidAt || null, fullPaidAt: j.report?.fullPaidAt || null }));
     unsaved.delete(j.id);
   } catch {
     unsaved.add(j.id); // 저장 못 해도 이번 화면에서는 연다 — 리포트 위에 안내
@@ -1431,7 +1434,9 @@ function recentFullToken() {
       const k = localStorage.key(i);
       if (!k?.startsWith(RKEY)) continue;
       const v = storedReport(k.slice(RKEY.length));
-      if (v?.plan === 'full' && v.paidAt && Date.now() - v.paidAt < 86400000) return v.token;
+      // 24시간은 처음 정밀 분석을 산 때부터(서버와 같게) — 재검사로 산 리포트는 fullPaidAt 이 처음 산 때다
+      const since = v?.fullPaidAt || v?.paidAt;
+      if (v?.plan === 'full' && since && Date.now() - since < 86400000) return v.token;
     }
   } catch { /* 없음 */ }
   return null;
@@ -1605,6 +1610,12 @@ function openInputs({ view, rows, chat, photo }) {
     chat?.chatImages?.length ? [h('p', { class: 'in-lbl' }, `대화 캡처 ${chat.chatImages.length}장`), chat.chatImages.map((src, k) => h('img', { class: 'in-img', src, alt: `대화 캡처 ${k + 1}` }))] : null);
 }
 
+// 리포트의 '정밀 분석 열기' 값 — 재검사 자격이 있으면 실제로 내는 재검사 값을 보여 준다.
+// 버튼에는 9,900원이 보이는데 재검사 봉투를 같이 보내 2,900원으로 처리되던 것(2026-10-27)
+function upgradePrice() {
+  return recentFullToken() && CONFIG.addons?.recheck?.price ? `재검사 ${won(CONFIG.addons.recheck.price)}` : OFFER.full ? won(OFFER.full) : priceText('full');
+}
+
 // 무료 점검 → 정밀 분석, 신고용 정리본 추가 (시험판 결제)
 async function upgrade(id, addon) {
   if (id === EXAMPLE_ID) { toast('예시 리포트에서는 쓸 수 없어요. 새로 점검하면 쓸 수 있어요.'); return; }
@@ -1639,7 +1650,7 @@ function timelineSec(j) {
     return h('section', { class: 'rp-sec' }, h('div', { class: 'tl-lock' },
       h('h2', { class: 'rp-sec-t' }, '대화 순서 정리'),
       h('p', { class: 'w' }, `상대가 한 말 가운데 확인할 말 ${tl.count}줄을 대화 순서대로 정리했습니다. 처음 돈 이야기가 나온 곳도 짚어 드립니다.`),
-      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(j.id) }, `정밀 분석 열기 · ${OFFER.full ? won(OFFER.full) : priceText('full')}`)));
+      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(j.id) }, `정밀 분석 열기 · ${upgradePrice()}`)));
   }
   const whole = inputParts('money', REPORT_INPUTS);
   return h('section', { class: 'rp-sec' },
@@ -1822,6 +1833,7 @@ async function showReport(id) {
       timelineSec(j),
       sec('확인 신호가 있는 항목', group('signal'), '사기에서 자주 보이는 흔적입니다. 근거를 직접 읽어 보세요.'),
       sec('참고할 항목', group('note'), '이것만으로 판단할 수는 없지만 알아 두면 좋은 내용입니다.'),
+      sec('직접 확인할 항목', group('manual'), '자동으로 조회할 수 있는 공식 자료가 없어 결과를 내지 않은 항목입니다. 각 항목의 버튼으로 경찰민원24·더치트 같은 곳에서 직접 확인해 보세요.'),
       sec('특이사항 없는 항목', group('clear'), '찾지 못했다는 뜻이며, 안전하다는 뜻은 아닙니다.'),
       sec('잠시 확인하지 못한 항목', group('retry'), '조회 서버가 잠깐 응답하지 않아 확인하지 못했습니다. 각 항목의 버튼으로 공식 사이트에서 바로 확인하거나, 잠시 뒤 새로 점검해 주세요. 무료 점검은 다시 해도 비용이 들지 않습니다.'),
       sec('연동 준비 중인 항목', group('pending'), '제휴나 공공데이터 키 연동 뒤 자동으로 조회합니다. 지금은 공식 사이트에서 직접 확인할 수 있습니다.'),
