@@ -1,15 +1,16 @@
-// 가이드 7쪽 + 사이트맵 + robots + 홈 머리말(검색·공유 정보)·홈 가이드 칸을 content/guides.mjs 에서 만든다.
+// 가이드 7쪽 + 이용약관·개인정보 처리방침 + 사이트맵 + robots + 홈 머리말(검색·공유 정보)·홈 가이드 칸을 content/guides.mjs·legal.mjs 에서 만든다.
 // 실행: node scripts/build-guides.mjs   (SITE_URL 로 주소를 바꿀 수 있다 — 기본 https://datecheck.vercel.app)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GUIDES, SITE, assertCardRules } from '../content/guides.mjs';
 import { LINKS } from '../lib/links.mjs';
+import { TERMS, PRIVACY, COMPANY, LEGAL_UPDATED } from '../content/legal.mjs';
 
 assertCardRules();
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUB = path.join(ROOT, 'public');
-const TODAY = '2026-10-19';
+const TODAY = '2026-10-27';
 const WJ = String.fromCharCode(0x2060);
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -33,33 +34,38 @@ const NAV = `<header class="nav solid" id="nav">
     <div class="nav-in">
       <a class="logo" href="/" aria-label="DATE CHECK 처음으로">${LOGO}</a>
       <nav class="nav-links" aria-label="주요 메뉴">
-        <a href="/#checks">점검 항목</a>
+        <a href="/#checks">조회 항목</a>
         <a href="/#process">진행 방식</a>
         <a href="/#safety">안전 원칙</a>
         <a href="/#guides">확인 가이드</a>
-        <a href="/#pricing">요금</a>
+        <a href="/#usage">이용 안내</a>
       </nav>
-      <a class="btn btn-rose btn-sm" href="/?start=1">무료 점검</a>
+      <a class="nav-login" href="/my">내 조회</a>
+      <a class="btn btn-rose btn-sm" href="/?start=1">조회 시작</a>
       <button class="nav-burger" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mnav"><span></span><span></span><span></span></button>
     </div>
   </header>
   <nav class="mnav" id="mnav" aria-label="모바일 메뉴">
-    <a href="/#checks">검증 항목</a>
+    <a href="/#checks">조회 항목</a>
     <a href="/#process">진행 방식</a>
+    <a href="/#safety">안전 원칙</a>
     <a href="/#guides">확인 가이드</a>
-    <a href="/#pricing">요금</a>
-    <a class="btn btn-rose" href="/?start=1">무료 점검 시작</a>
+    <a href="/#usage">이용 안내</a>
+    <a href="/my">내 조회</a>
+    <a class="btn btn-rose" href="/?start=1">조회 시작</a>
   </nav>`;
 
 const FOOT = `<footer class="foot">
     <div class="wrap foot-in">
       <div>
         <a class="logo logo-sm" href="/">${LOGO}</a>
-        <p class="foot-note w">DATE&nbsp;CHECK는 상대방의 신원이나 안전을 보증하지 않으며, 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 분석합니다.</p>
+        <p class="foot-note w">DATE&nbsp;CHECK는 어떤 사람의 신원이나 안전을 보증하지 않으며, 입력한 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다.</p>
+        <p class="foot-biz">${COMPANY.name} · 대표 ${COMPANY.ceo} · 사업자등록번호 ${COMPANY.biz} · ${COMPANY.address} · ${COMPANY.tel} · ${COMPANY.email}</p>
       </div>
       <div class="foot-links">
+        <a class="link-btn" href="/terms">이용약관</a>
+        <a class="link-btn foot-strong" href="/privacy">개인정보 처리방침</a>
         <a class="link-btn" href="/#guides">확인 가이드</a>
-        <span class="foot-tag">시험판 · 실제 결제 없음</span>
       </div>
     </div>
   </footer>`;
@@ -148,9 +154,9 @@ function guidePage(g) {
           <div class="g-links">${links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${glue(l.label)}</a>`).join('')}</div>
         </section>
         <aside class="g-cta">
-          <p class="g-cta-t">상대에게 받은 정보로 한 번에 확인하세요</p>
-          <p class="w">받은 대화, 링크, 계좌, 사진을 넣으면 13개 항목을 살펴 확인 신호를 근거와 함께 짚어 드립니다.</p>
-          <a class="btn btn-rose" href="/?start=1">무료 점검 시작</a>
+          <p class="g-cta-t">내 정보와 받은 정보로 한 번에 확인하세요</p>
+          <p class="w">받은 대화, 링크, 계좌, 사진을 넣으면 13개 항목을 살펴 확인 신호를 근거와 함께 짚어 드립니다. 가입하면 결제 없이 모두 조회할 수 있습니다.</p>
+          <a class="btn btn-rose" href="/?start=1">조회 시작</a>
         </aside>
       </div>
       <section class="g-more" aria-labelledby="more-title">
@@ -177,17 +183,67 @@ fs.mkdirSync(gdir, { recursive: true });
 for (const f of fs.readdirSync(gdir)) if (f.endsWith('.html')) fs.unlinkSync(path.join(gdir, f));
 for (const g of GUIDES) fs.writeFileSync(path.join(gdir, `${g.slug}.html`), guidePage(g));
 
+// ---------- 이용약관·개인정보 처리방침 ----------
+function legalPage(l) {
+  const sections = l.sections.map((s) => `
+        <section class="g-sec">
+          <h2>${glue(s.h2)}</h2>
+          ${(s.p || []).map((p) => `<p class="w">${glue(p)}</p>`).join('\n          ')}
+          ${s.list ? `<ul class="g-list">${s.list.map((li) => `<li>${glue(li)}</li>`).join('')}</ul>` : ''}
+          ${(s.after || []).map((p) => `<p class="w">${glue(p)}</p>`).join('\n          ')}
+        </section>`).join('');
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>${esc(l.title)} | DATE CHECK</title>
+  <meta name="description" content="${esc(l.desc)}">
+  <link rel="canonical" href="${url(`/${l.slug}`)}">
+  <meta name="theme-color" content="#0B1424">
+  ${HEAD_ICONS}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="guide-page legal-page">
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  ${NAV}
+  <main id="main">
+    <article class="guide">
+      <header class="g-head">
+        <div class="wrap g-narrow">
+          <nav class="crumbs" aria-label="현재 위치"><a href="/">DATE CHECK</a><span aria-hidden="true">›</span><span>${glue(l.title)}</span></nav>
+          <h1>${glue(l.title)}</h1>
+          <p class="g-lead w">${glue(l.desc)}</p>
+          <p class="legal-date">시행일 ${LEGAL_UPDATED}</p>
+        </div>
+      </header>
+      <div class="wrap g-narrow g-body">${sections}
+      </div>
+    </article>
+  </main>
+  ${FOOT}
+  <script src="/wrap.js"></script>
+  <script src="/guide.js"></script>
+</body>
+</html>
+`;
+}
+for (const l of [TERMS, PRIVACY]) fs.writeFileSync(path.join(PUB, `${l.slug}.html`), legalPage(l));
+
 // ---------- 사이트맵·robots ----------
 fs.writeFileSync(path.join(PUB, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${SITE}/</loc><lastmod>${TODAY}</lastmod></url>
 ${GUIDES.map((g) => `  <url><loc>${url(`/guide/${g.slug}`)}</loc><lastmod>${TODAY}</lastmod></url>`).join('\n')}
+${[TERMS, PRIVACY].map((l) => `  <url><loc>${url(`/${l.slug}`)}</loc><lastmod>${LEGAL_UPDATED}</lastmod></url>`).join('\n')}
 </urlset>
 `);
 fs.writeFileSync(path.join(PUB, 'robots.txt'), `User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /report/
+Disallow: /my
 Disallow: /admin
 
 Sitemap: ${SITE}/sitemap.xml
@@ -203,7 +259,7 @@ const between = (html, tag, body) => {
   return html.slice(0, html.indexOf(a) + a.length) + body + html.slice(html.indexOf(b));
 };
 const homeTitle = 'DATE CHECK · 받은 메시지·송금 요청 안전 점검';
-const homeDesc = '카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 무료 점검부터 시작하세요.';
+const homeDesc = '카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 가입하면 결제 없이 모든 항목을 조회할 수 있습니다.';
 idx = between(idx, 'SEO', `
   <link rel="canonical" href="${SITE}/">
   <meta property="og:type" content="website">
@@ -225,14 +281,14 @@ idx = between(idx, 'GUIDES', `
           <div class="sec-head rv">
             <p class="eyebrow">확인 가이드</p>
             <h2 id="guides-title">혼자 먼저 확인해 볼 수도 있습니다</h2>
-            <p class="w">공식 조회 사이트와 확인하는 순서를 정리했습니다. 한 번에 확인하려면 무료 점검을 이용하세요.</p>
+            <p class="w">공식 조회 사이트와 확인하는 순서를 정리했습니다. 한 번에 확인하려면 DATE&nbsp;CHECK 조회를 이용하세요.</p>
           </div>
           <div class="g-cards g-cards-home">${GUIDES.map((g) => `
             <a class="g-card rv" href="/guide/${g.slug}"><img src="${cardImg(g)}" alt="${esc(g.name)}" width="800" height="800" loading="lazy"><span>${glue(g.name)}</span></a>`).join('')}
-            <div class="g-card g-card-cta rv"><b>한 번에 확인하기</b><small>받은 메시지와 정보를 넣으면 13개 항목을 살펴봅니다.</small><button class="btn btn-rose btn-sm" type="button" data-open-wizard>무료 점검 시작</button></div>
+            <div class="g-card g-card-cta rv"><b>한 번에 확인하기</b><small>받은 메시지와 정보를 넣으면 13개 항목을 살펴봅니다.</small><button class="btn btn-rose btn-sm" type="button" data-open-wizard>조회 시작</button></div>
           </div>
         </div>
       </section>
       `);
 fs.writeFileSync(idxPath, idx);
-console.log(`가이드 ${GUIDES.length}쪽·사이트맵·robots·홈 머리말·홈 가이드 칸 완료 (${SITE})`);
+console.log(`가이드 ${GUIDES.length}쪽·약관 2쪽·사이트맵·robots·홈 머리말·홈 가이드 칸 완료 (${SITE})`);

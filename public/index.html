@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>DATE CHECK · 받은 메시지·송금 요청 안전 점검</title>
-  <meta name="description" content="카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 무료 점검부터 시작하세요.">
+  <meta name="description" content="카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 가입하면 결제 없이 모든 항목을 조회할 수 있습니다.">
   <meta name="theme-color" content="#0B1424">
   <!-- 구글 서치콘솔 소유 확인(자동화 계정 winaid-automation, 2026-10-27) — 지우면 서치콘솔 소유권이 풀린다 -->
   <meta name="google-site-verification" content="oWYCVLYK-XLZ2-W4_z2ibMyLoue1G8R65MwX473KFSE">
@@ -14,7 +14,7 @@
   <meta property="og:site_name" content="DATE CHECK">
   <meta property="og:locale" content="ko_KR">
   <meta property="og:title" content="DATE CHECK · 받은 메시지·송금 요청 안전 점검">
-  <meta property="og:description" content="카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 무료 점검부터 시작하세요.">
+  <meta property="og:description" content="카톡·DM 대화, 받은 링크, 입금하라는 계좌를 넣으면 금전 요구·투자 유도·사진 도용 같은 확인 신호를 근거와 함께 짚어 드립니다. 가입하면 결제 없이 모든 항목을 조회할 수 있습니다.">
   <meta property="og:url" content="https://datecheck.vercel.app/">
   <meta property="og:image" content="https://datecheck.vercel.app/og.jpg">
   <meta property="og:image:width" content="1200">
@@ -37,23 +37,27 @@
     <div class="nav-in">
       <a class="logo" href="/" data-home aria-label="DATE CHECK 처음으로"><span class="logo-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="#E8506A" stroke="#E8506A" stroke-linejoin="round"><rect x="4" y="6" width="56" height="42" rx="14" stroke-width="0"/><path d="M15 42 L15.5 57 L31 45 Z" stroke-width="3"/></g><polyline points="19.5,27.5 28,35.5 44.5,18.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="logo-a">DATE</span><span class="logo-b">CHECK</span></a>
       <nav class="nav-links" aria-label="주요 메뉴">
-        <a href="/#checks">점검 항목</a>
+        <a href="/#checks">조회 항목</a>
         <a href="/#process">진행 방식</a>
         <a href="/#safety">안전 원칙</a>
         <a href="/#guides">확인 가이드</a>
-        <a href="/#pricing">요금</a>
+        <a href="/#usage">이용 안내</a>
       </nav>
-      <button class="btn btn-rose btn-sm" type="button" data-open-wizard>무료 점검</button>
+      <button class="nav-login" type="button" data-open-auth>로그인</button>
+      <a class="nav-login" href="/my" data-auth-my hidden>내 조회</a>
+      <button class="btn btn-rose btn-sm" type="button" data-open-wizard>조회 시작</button>
       <button class="nav-burger" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mnav"><span></span><span></span><span></span></button>
     </div>
   </header>
   <nav class="mnav" id="mnav" aria-label="모바일 메뉴">
-    <a href="/#checks">점검 항목</a>
+    <a href="/#checks">조회 항목</a>
     <a href="/#process">진행 방식</a>
     <a href="/#safety">안전 원칙</a>
     <a href="/#guides">확인 가이드</a>
-    <a href="/#pricing">요금</a>
-    <button class="btn btn-rose" type="button" data-open-wizard>무료 점검 시작</button>
+    <a href="/#usage">이용 안내</a>
+    <a href="/my" data-auth-my hidden>내 조회</a>
+    <button class="mnav-login" type="button" data-open-auth>로그인</button>
+    <button class="btn btn-rose" type="button" data-open-wizard>조회 시작</button>
   </nav>
 
   <main id="main">
@@ -74,12 +78,13 @@
             <span class="ln w">돈을 보내기 전에 받은 메시지와 요청을 AI가 먼저 살펴 금전&nbsp;요구·투자&nbsp;유도·사진&nbsp;도용 같은 확인 신호를 근거와 함께 짚어 드립니다.</span>
           </p>
           <div class="hero-cta rise" style="--d:.72s">
-            <button class="btn btn-rose btn-lg" type="button" data-open-wizard>무료 점검 시작</button>
-            <a class="btn btn-glass btn-lg" href="#checks">점검 항목 보기</a>
+            <button class="btn btn-rose btn-lg" type="button" data-open-wizard>조회 시작</button>
+            <a class="btn btn-glass btn-lg" href="#checks">조회 항목 보기</a>
           </div>
           <ul class="hero-meta rise" style="--d:.9s">
-            <li><b data-count="13">13</b>개 점검 항목</li>
+            <li><b data-count="13">13</b>개 조회 항목</li>
             <li><b>근거 문장</b>과 함께</li>
+            <li><b>결제 없이</b> 모든 항목</li>
             <li><b>원본</b> 서버에 남기지 않음</li>
           </ul>
         </div>
@@ -119,9 +124,9 @@
       <section class="checks" id="checks" aria-labelledby="checks-title">
         <div class="wrap">
           <div class="sec-head rv">
-            <p class="eyebrow">점검 항목</p>
+            <p class="eyebrow">조회 항목</p>
             <h2 id="checks-title"><span data-count="13">13</span>개 항목을 살펴봅니다</h2>
-            <p class="w">받은 것만 넣으면 됩니다. 넣은 정보에 따라 살펴볼 항목이 자동으로 정해집니다.</p>
+            <p class="w">내 정보나 받은 정보만 넣으면 됩니다. 넣은 정보에 따라 살펴볼 항목이 자동으로 정해집니다.</p>
           </div>
           <div class="filters rv" role="tablist" aria-label="정보 종류로 보기">
             <button type="button" role="tab" aria-selected="true" data-f="all">전체</button>
@@ -141,31 +146,31 @@
           <div class="sec-head rv">
             <p class="eyebrow">진행 방식</p>
             <h2 id="process-title">네 단계면 끝납니다</h2>
-            <p class="w">입력은 한 화면에 하나씩 차례로 넣습니다. 무료 점검 결과를 먼저 보고 정밀 분석을 받을지 정합니다.</p>
+            <p class="w">로그인하고 정보를 한 화면에 하나씩 넣으면 13개 항목 결과가 바로 나옵니다. 결제는 없습니다.</p>
           </div>
           <ol class="steps" id="steps">
             <li class="step">
               <span class="step-no">01</span>
-              <h3>받은 것 고르기</h3>
-              <p class="w">상대에게 받은 메시지, 링크, 계좌 가운데 가진 것만 고릅니다. 모두 넣을 필요는 없습니다.</p>
-              <div class="mock mock-chips"><i class="on">전화번호</i><i class="on">카톡</i><i>사진</i><i class="on">URL</i><i>계좌</i></div>
+              <h3>로그인</h3>
+              <p class="w">이메일로 가입하거나 구글·카카오 계정으로 들어옵니다. 조회 기록은 내 계정에만 남습니다.</p>
+              <div class="mock mock-chips"><i class="on">이메일</i><i>구글</i><i>카카오</i></div>
             </li>
             <li class="step">
               <span class="step-no">02</span>
-              <h3>정보 입력과 업로드</h3>
-              <p class="w">캡처는 올리기만 하면 됩니다. 글자는 AI가 읽습니다.</p>
+              <h3>조회할 정보 넣기</h3>
+              <p class="w">내 정보나 받은 메시지, 링크, 계좌 가운데 가진 것만 고릅니다. 캡처는 올리기만 하면 글자를 AI가 읽습니다.</p>
               <div class="mock mock-upload"><i></i><i></i><i></i><span>캡처 3장</span></div>
             </li>
             <li class="step">
               <span class="step-no">03</span>
-              <h3>무료 점검</h3>
-              <p class="w">번호·링크·사업자 결과는 무료로 바로 봅니다. 대화에서 찾은 신호 수도 먼저 알려 드립니다.</p>
-              <div class="mock mock-stat"><span>총 13개 항목 중 <b>7개</b> 점검</span><span>확인 신호 <b class="rose">4개</b> 발견</span></div>
+              <h3>조회 결과</h3>
+              <p class="w">대화 근거 문장, 사진 도용 검색, 대화 순서 정리, 신고용 정리본까지 한 번에 봅니다.</p>
+              <div class="mock mock-stat"><span>총 13개 항목 중 <b>7개</b> 조회</span><span>확인 신호 <b class="rose">4개</b> 발견</span></div>
             </li>
             <li class="step">
               <span class="step-no">04</span>
-              <h3>정밀 분석</h3>
-              <p class="w">대화 근거 문장, 사진 도용 검색, 대화 순서 정리가 담긴 리포트가 열립니다.</p>
+              <h3>내 조회 내역</h3>
+              <p class="w">지난 조회는 30일 동안 ‘내 조회’에서 다시 열어 볼 수 있고, 언제든 바로 지울 수 있습니다.</p>
               <div class="mock mock-report"><i></i><i class="s"></i><i></i><i class="s short"></i></div>
             </li>
           </ol>
@@ -198,7 +203,7 @@
           <div class="sec-head rv">
             <p class="eyebrow">안전 원칙</p>
             <h2 id="safety-title">하지 않는 일부터 정했습니다</h2>
-            <p class="w">“상대방 뒷조사”가 아니라 “내가 받은 메시지와 송금 요청의 안전 점검”입니다.</p>
+            <p class="w">“다른 사람 뒷조사”가 아니라 “내 정보와 내가 받은 메시지·송금 요청의 안전 확인”입니다.</p>
           </div>
           <div class="safe-grid">
             <article class="safe rv">
@@ -215,55 +220,45 @@
             </article>
             <article class="safe rv">
               <h3>원본은 서버에 남기지 않습니다</h3>
-              <p class="w">전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 서버에서 지웁니다. 다시 볼 수 있게 점검한 기기에만 리포트와 함께 24시간 두고 자동으로 지웁니다.</p>
+              <p class="w">사진과 대화 원본은 분석이 끝나면 서버에서 지웁니다. 조회 결과는 서버만 풀 수 있게 암호화해 내 계정에 30일 두고 자동으로 지웁니다.</p>
             </article>
           </div>
         </div>
       </section>
 
-      <!-- 요금 — 2026-10-22 오너 결정: 무료 점검 + 정밀 분석(가격은 방문자마다 시험) + 추가 상품. 정기 결제는 나중에 -->
-      <section class="pricing" id="pricing" aria-labelledby="pricing-title">
+      <!-- 이용 안내 — 2026-10-27 오너: 결제·통신판매 없이, 로그인해야 모든 기능 -->
+      <section class="usage" id="usage" aria-labelledby="usage-title">
         <div class="wrap">
           <div class="sec-head rv">
-            <p class="eyebrow">요금</p>
-            <h2 id="pricing-title">무료로 먼저 보고, 필요할 때만 결제합니다</h2>
-            <p class="w">구독 없이 한 건씩입니다. 무료 점검 결과를 보고 정밀 분석을 받을지 정하면 됩니다.</p>
+            <p class="eyebrow">이용 안내</p>
+            <h2 id="usage-title">가입하면 결제 없이 모두 씁니다</h2>
+            <p class="w">요금제나 추가 상품이 없습니다. 로그인한 회원은 13개 항목과 신고용 정리본을 그대로 씁니다.</p>
           </div>
-          <div class="plans plans-3">
-            <article class="plan rv">
-              <p class="plan-name">무료 점검</p>
-              <p class="plan-desc">번호·링크·사업자</p>
-              <p class="plan-price">0원</p>
-              <ul>
-                <li>전화번호·계좌 경찰민원24·더치트 직접 조회 안내</li>
-                <li>링크 등록일과 닮은 주소</li>
-                <li>사업자 진위·상태와 통신판매 신고</li>
-                <li>회사·병원이 실제로 있는지 공개 자료로 확인</li>
-                <li>대화에서 찾은 확인 신호 개수</li>
-              </ul>
-              <button class="btn btn-line" type="button" data-open-wizard>무료 점검 시작</button>
+          <div class="use-grid">
+            <article class="use rv">
+              <p class="use-k">조회</p>
+              <h3>13개 항목 전부</h3>
+              <p class="w">번호·계좌 직접 조회 안내, 대화 AI 분석과 근거 문장, 사진 도용 검색, 링크·사업자·회사 공개 자료 확인을 한 번에 봅니다.</p>
             </article>
-            <article class="plan plan-full rv">
-              <p class="plan-tag">추천</p>
-              <p class="plan-name">정밀 분석</p>
-              <p class="plan-desc">대화와 사진까지</p>
-              <p class="plan-price" data-price="full">가격 미정</p>
-              <ul>
-                <li>무료 점검 전부</li>
-                <li>카톡·DM 대화 AI 분석과 근거 문장</li>
-                <li>프로필 사진 도용 웹 검색</li>
-                <li>대화 순서 정리와 다음에 할 일</li>
-              </ul>
-              <button class="btn btn-rose" type="button" data-open-wizard>무료 점검 시작</button>
+            <article class="use rv">
+              <p class="use-k">기록</p>
+              <h3>내 조회 내역 <span data-retention>30</span>일</h3>
+              <p class="w">조회 결과는 암호화해 내 계정에만 둡니다. 지난 조회를 다시 열거나 바로 지울 수 있고, 탈퇴하면 모두 지워집니다.</p>
             </article>
-            <article class="plan plan-add rv">
-              <p class="plan-name">추가 상품</p>
-              <p class="plan-desc">필요할 때만</p>
-              <div class="add-list">
-                <div><b>신고용 정리본</b><span data-price="casefile">2,900원</span><p class="w">경찰 신고에 붙일 상대 정보·확인 신호·대화 순서·챙길 자료를 한 장으로</p></div>
-                <div><b>재검사</b><span data-price="recheck">2,900원</span><p class="w">정밀 분석 뒤 24시간 안에 새 대화나 다른 상대를 다시 분석</p></div>
-              </div>
+            <article class="use rv">
+              <p class="use-k">한도</p>
+              <h3>24시간에 <span data-quota>30</span>번</h3>
+              <p class="w">AI와 공공데이터를 함께 쓰는 서비스라 계정마다 10분에 10번, 24시간에 30번까지 조회할 수 있습니다.</p>
             </article>
+            <article class="use rv">
+              <p class="use-k">책임</p>
+              <h3>내 정보와 받은 정보만</h3>
+              <p class="w">조회할 때마다 내 정보이거나 내가 받은 정보인지, 결과를 퍼뜨리지 않을지 확인합니다. 입력과 이용의 책임은 이용자에게 있습니다.</p>
+            </article>
+          </div>
+          <div class="use-cta rv">
+            <button class="btn btn-rose" type="button" data-open-wizard>조회 시작</button>
+            <button class="btn btn-line" type="button" data-open-auth data-auth-mode="signup">회원가입</button>
           </div>
         </div>
       </section>
@@ -274,7 +269,7 @@
           <div class="sec-head rv">
             <p class="eyebrow">확인 가이드</p>
             <h2 id="guides-title">혼자 먼저 확인해 볼 수도 있습니다</h2>
-            <p class="w">공식 조회 사이트와 확인하는 순서를 정리했습니다. 한 번에 확인하려면 무료 점검을 이용하세요.</p>
+            <p class="w">공식 조회 사이트와 확인하는 순서를 정리했습니다. 한 번에 확인하려면 DATE&nbsp;CHECK 조회를 이용하세요.</p>
           </div>
           <div class="g-cards g-cards-home">
             <a class="g-card rv" href="/guide/romance-scam"><img src="/img/card/romance-scam.jpg" alt="로맨스스캠 확인 방법" width="800" height="800" loading="lazy"><span>로맨스스캠 확인 방법</span></a>
@@ -284,7 +279,7 @@
             <a class="g-card rv" href="/guide/investment-site"><img src="/img/card/investment-site.jpg" alt="투자 사이트 확인 방법" width="800" height="800" loading="lazy"><span>투자 사이트 확인 방법</span></a>
             <a class="g-card rv" href="/guide/business-check"><img src="/img/card/business-check.jpg" alt="사업자등록번호 조회" width="800" height="800" loading="lazy"><span>사업자등록번호 조회</span></a>
             <a class="g-card rv" href="/guide/after-sending"><img src="/img/card/after-sending.jpg" alt="이미 돈을 보냈다면" width="800" height="800" loading="lazy"><span>이미 돈을 보냈다면</span></a>
-            <div class="g-card g-card-cta rv"><b>한 번에 확인하기</b><small>받은 메시지와 정보를 넣으면 13개 항목을 살펴봅니다.</small><button class="btn btn-rose btn-sm" type="button" data-open-wizard>무료 점검 시작</button></div>
+            <div class="g-card g-card-cta rv"><b>한 번에 확인하기</b><small>받은 메시지와 정보를 넣으면 13개 항목을 살펴봅니다.</small><button class="btn btn-rose btn-sm" type="button" data-open-wizard>조회 시작</button></div>
           </div>
         </div>
       </section>
@@ -296,8 +291,8 @@
         <div class="final-scrim"></div>
         <div class="wrap final-in rv">
           <h2 id="final-title">보내기 전, 확인하세요.</h2>
-          <p class="w">무료 점검 결과를 보고 결제할지 정하면 됩니다.</p>
-          <button class="btn btn-rose btn-lg" type="button" data-open-wizard>무료 점검 시작</button>
+          <p class="w">로그인하면 결제 없이 바로 조회할 수 있습니다.</p>
+          <button class="btn btn-rose btn-lg" type="button" data-open-wizard>조회 시작</button>
         </div>
       </section>
     </div>
@@ -310,14 +305,16 @@
     <div class="wrap foot-in">
       <div>
         <a class="logo logo-sm" href="/" data-home><span class="logo-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="#E8506A" stroke="#E8506A" stroke-linejoin="round"><rect x="4" y="6" width="56" height="42" rx="14" stroke-width="0"/><path d="M15 42 L15.5 57 L31 45 Z" stroke-width="3"/></g><polyline points="19.5,27.5 28,35.5 44.5,18.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="logo-a">DATE</span><span class="logo-b">CHECK</span></a>
-        <p class="foot-note w">DATE&nbsp;CHECK는 상대방의 신원이나 안전을 보증하지 않으며, 받은 메시지와 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다.</p>
+        <p class="foot-note w">DATE&nbsp;CHECK는 어떤 사람의 신원이나 안전을 보증하지 않으며, 입력한 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다.</p>
         <!-- 생성형 AI 사전 고지(AI기본법 제31조 제1항, 2026-01-22 시행) -->
         <p class="foot-note w">대화와 사진 분석에는 생성형 AI인 구글 제미나이를 사용합니다.</p>
+        <p class="foot-biz">(주)윈에이드 · 대표 이현승 · 사업자등록번호 178-88-00714 · 서울특별시 영등포구 양평로20길 16-1 2층 · 02-584-9400 · winaid@daum.net</p>
       </div>
       <div class="foot-links">
+        <a class="link-btn" href="/terms">이용약관</a>
+        <a class="link-btn foot-strong" href="/privacy">개인정보 처리방침</a>
+        <button type="button" class="link-btn" data-open-privacy>개인정보 처리 요약</button>
         <button type="button" class="link-btn" data-open-request>삭제 요청·문의·신고</button>
-        <button type="button" class="link-btn" data-open-privacy>개인정보 처리 안내</button>
-        <span class="foot-tag">시험판 · 실제 결제 없음</span>
       </div>
     </div>
   </footer>

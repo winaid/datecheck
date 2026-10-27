@@ -1,4 +1,4 @@
-// DATE CHECK 관리자 — 기획서 10장(관리자 페이지)과 12장(성공판단 지표)
+// DATE CHECK 관리자 — 기획서 10장(관리자 페이지)과 12장(성공판단 지표). 2026-10-27 결제를 없애고 회원·가입·조회 숫자로
 const $ = (s, r = document) => r.querySelector(s);
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
@@ -31,6 +31,7 @@ const num = (n) => (n || 0).toLocaleString('ko-KR');
 const time = (t) => { const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const API_NAME = { naver: '네이버 검색 (예전 기록, 지금은 쓰지 않음)', vision: '구글 Vision 사진 웹 검색', whois: 'KISA WHOIS · RDAP', gemini: '제미나이 AI 분석', nts: '국세청 사업자 상태', ftc_mail: '공정위 통신판매사업자', ftc_door: '공정위 방문판매사업자', fsc_corp: '금융위 기업기본정보', ftc_sponsor: '공정위 후원방문판매사업자', ftc_mlm: '공정위 다단계판매사업자', hira: '심평원 병원정보', thecheat: '더치트' };
 const TYPE = { delete: '삭제 요청', inquiry: '문의', report: '신고' };
+const PROVIDER = { email: '이메일', google: '구글', kakao: '카카오' };
 
 function login(msg) {
   const inp = h('input', { class: 'inp', type: 'password', placeholder: '관리자 키', autocomplete: 'current-password' });
@@ -64,18 +65,21 @@ async function load() {
 
 function render(s, key) {
   const k = s.kpi;
+  const m = s.members; // 데이터베이스 숫자(회원·가입·조회) — 없으면 함수 집계만
   const today = s.today.events || {};
-  const maxDay = Math.max(1, ...s.daily.map((d) => d.checks));
+  // 일일 조회·가입은 데이터베이스 기록이 있으면 그것으로(함수마다 따로 세는 임시 집계보다 정확)
+  const daily = m?.daily?.length ? m.daily : s.daily;
+  const maxDay = Math.max(1, ...daily.map((d) => Math.max(d.checks || 0, d.signups || 0)));
   const f = s.funnel;
-  const stages = [['랜딩 방문', f.landing], ['검증 시작', f.started], ['정보 입력 완료', f.analyzed], ['무료 결과 확인', f.previewed], ['결제', f.paid]];
-  const top = Math.max(1, f.landing, f.started, f.analyzed);
-  const chart = h('div', { class: 'chart' }, s.daily.map((d) => h('div', { class: 'col', title: `${d.day} 검사 ${d.checks} · 결제 ${d.paid}` },
+  const stages = [['랜딩 방문', f.landing], ['로그인 창 열기', f.authOpen], ['가입', f.signups], ['조회 시작', f.started], ['조회 완료', f.analyzed], ['리포트 다시 열기', f.viewed]];
+  const top = Math.max(1, ...stages.map(([, n]) => n || 0));
+  const chart = h('div', { class: 'chart' }, daily.map((d) => h('div', { class: 'col', title: `${d.day} 조회 ${d.checks} · 가입 ${d.signups}` },
     h('span', { class: 'v' }, d.checks || ''),
     h('div', { class: 'bar', style: `height:${(d.checks / maxDay) * 150}px` }),
-    d.paid ? h('div', { class: 'bar paid', style: `height:${(d.paid / maxDay) * 150}px` }) : null)));
+    d.signups ? h('div', { class: 'bar paid', style: `height:${(d.signups / maxDay) * 150}px` }) : null)));
   const fn = h('div', { class: 'fn' }, stages.map(([label, n], i) => h('div', { class: 'fn-row' },
     h('span', {}, label),
-    h('div', { class: 'fn-track' }, h('i', { 'data-w': `${(n / top) * 100}%` })),
+    h('div', { class: 'fn-track' }, h('i', { 'data-w': `${((n || 0) / top) * 100}%` })),
     h('b', {}, num(n), h('small', {}, i ? pct(stages[i - 1][1] ? n / stages[i - 1][1] : null) : '')))));
 
   const metric = (label, val, note) => h('div', { class: 'metric' }, h('span', {}, label), h('b', {}, val), note ? h('em', {}, note) : null);
@@ -96,6 +100,8 @@ function render(s, key) {
         },
       }), h('span', {}, '처리')))))
     : [h('tr', {}, h('td', { colspan: 5, class: 'empty' }, '들어온 요청이 없습니다.'))];
+  const todayRow = daily[daily.length - 1] || {};
+  const providers = m?.providers ? Object.entries(m.providers).map(([p, n]) => `${PROVIDER[p] || p} ${num(n)}`).join(' · ') : '데이터베이스 연결 전';
 
   root.replaceChildren(
     h('header', { class: 'ad-top' }, h('div', { class: 'wrap' },
@@ -105,47 +111,38 @@ function render(s, key) {
       h('button', { class: 'btn btn-glass', type: 'button', onclick: load }, '새로고침'),
       h('button', { class: 'btn btn-glass', type: 'button', onclick: () => { sessionStorage.removeItem(KEY); login(); } }, '나가기'))),
     h('main', { class: 'ad-main' }, h('div', { class: 'wrap' },
-      h('p', { class: 'ad-note w' }, '원본 개인정보는 저장하지 않아 관리자도 볼 수 없습니다. 이 화면을 열면 관리자 접근 로그에 남습니다. 원가는 단가 추정치입니다.'),
-      s.storage === 'ephemeral' ? h('p', { class: 'ad-note ad-warn w' }, 'Vercel 에서는 집계와 문의가 함수 임시 폴더에 쌓여 함수가 다시 시작되면 사라지고, 함수마다 따로 셉니다. 정식 운영 전에 Upstash Redis 같은 저장소를 연결해야 합니다.') : null,
+      h('p', { class: 'ad-note w' }, '사진과 대화 같은 원본 개인정보는 저장하지 않고, 조회 결과는 암호화돼 있어 관리자도 볼 수 없습니다. 이 화면을 열면 관리자 접근 로그에 남습니다. 원가는 단가 추정치입니다.'),
+      m ? null : h('p', { class: 'ad-note ad-warn w' }, '데이터베이스(Supabase)에 연결하지 못해 회원 숫자를 보여 드리지 못했습니다. 아래 숫자는 함수마다 따로 세는 임시 집계입니다.'),
       h('div', { class: 'ad-grid' },
-        h('div', { class: 'kpi' }, h('span', {}, '오늘 검사'), h('b', {}, num(today.inputs_done)), h('em', {}, `무료 결과 확인 ${num(today.preview_view)}건`)),
-        h('div', { class: 'kpi' }, h('span', {}, '오늘 결제'), h('b', {}, num((today.paid_full || 0) + (today.upgrade_full || 0) + (today.addon_recheck || 0) + (today.addon_casefile || 0))), h('em', {}, `정밀 분석 ${num((today.paid_full || 0) + (today.upgrade_full || 0))} · 재검사 ${num(today.addon_recheck)} · 정리본 ${num(today.addon_casefile)}`)),
-        h('div', { class: 'kpi' }, h('span', {}, '30일 매출'), h('b', {}, won(s.revenue)), h('em', {}, `객단가 ${k.aov == null ? '—' : won(k.aov)}`)),
-        h('div', { class: 'kpi' }, h('span', {}, '검사 1건당 원가'), h('b', {}, won(k.costPerCheck)), h('em', {}, 'API와 AI 합계')),
-        h('div', { class: 'kpi' }, h('span', {}, '30일 AI 비용'), h('b', {}, won(s.aiKrw)), h('em', {}, '제미나이 토큰 기준'))),
+        h('div', { class: 'kpi' }, h('span', {}, '전체 회원'), h('b', {}, m ? num(m.users) : '—'), h('em', {}, providers)),
+        h('div', { class: 'kpi' }, h('span', {}, '오늘 가입'), h('b', {}, num(todayRow.signups)), h('em', {}, '한국 시간 기준')),
+        h('div', { class: 'kpi' }, h('span', {}, '오늘 조회'), h('b', {}, num(m ? todayRow.checks : today.inputs_done)), h('em', {}, m ? `보관 중인 조회 기록 ${num(m.reportsStored)}건` : '함수 임시 집계')),
+        h('div', { class: 'kpi' }, h('span', {}, '조회 1건당 원가'), h('b', {}, won(k.costPerCheck)), h('em', {}, 'API와 AI 합계')),
+        h('div', { class: 'kpi' }, h('span', {}, '30일 AI 비용'), h('b', {}, won(s.aiKrw)), h('em', {}, `API 전체 ${won(s.apiKrw)}`))),
       h('div', { class: 'two row-gap' },
-        h('div', { class: 'card' }, h('h2', {}, '일일 검사건수'), h('p', { class: 'desc' }, '최근 14일'), chart,
-          h('div', { class: 'days' }, s.daily.map((d) => h('span', {}, d.day.slice(8)))),
-          h('div', { class: 'legend' }, h('span', {}, h('i', { style: 'background:var(--navy-600)' }), '검사'), h('span', {}, h('i', { style: 'background:var(--rose)' }), '결제'))),
-        h('div', { class: 'card' }, h('h2', {}, '무료에서 유료까지'), h('p', { class: 'desc' }, '최근 30일, 오른쪽은 앞 단계 대비'), fn)),
-      h('div', { class: 'card' }, h('h2', {}, 'MVP 성공판단 지표'), h('p', { class: 'desc' }, '기획서 12장 기준, 최근 30일'),
+        h('div', { class: 'card' }, h('h2', {}, '일일 조회·가입'), h('p', { class: 'desc' }, '최근 14일'), chart,
+          h('div', { class: 'days' }, daily.map((d) => h('span', {}, d.day.slice(8)))),
+          h('div', { class: 'legend' }, h('span', {}, h('i', { style: 'background:var(--navy-600)' }), '조회'), h('span', {}, h('i', { style: 'background:var(--rose)' }), '가입'))),
+        h('div', { class: 'card' }, h('h2', {}, '방문에서 조회까지'), h('p', { class: 'desc' }, '최근 30일 화면 집계, 오른쪽은 앞 단계 대비'), fn)),
+      h('div', { class: 'card' }, h('h2', {}, '성공판단 지표'), h('p', { class: 'desc' }, '최근 30일'),
         h('div', { class: 'metrics' },
-          metric('랜딩 → 검사 시작률', pct(k.startRate)),
-          metric('정보입력 완료율', pct(k.inputDoneRate)),
-          metric('무료결과 → 결제율', pct(k.payRate)),
-          metric('무료 점검 → 정밀 분석 전환율', pct(k.upgradeRate), `무료 결과 대비 정밀 분석 ${pct(k.fullShare)}`),
-          metric('평균 객단가', k.aov == null ? '가격 미정' : won(k.aov)),
-          metric('검사 1건당 API·AI 원가', won(k.costPerCheck)),
-          metric('재사용률', pct(k.reuseRate), '두 번 이상 검사한 방문자'),
-          metric('환불률', pct(k.refundRate)),
-          metric('고객획득비용', '—', '광고비 연동 필요'))),
-      // 2026-10-22 정밀 분석 가격 시험 — 방문자마다 한 가격으로 고정
-      h('div', { class: 'card' }, h('h2', {}, '정밀 분석 가격 시험'), h('p', { class: 'desc' }, `최근 30일, 방문자마다 한 가격 · 신고용 정리본 ${won(s.prices.casefile)} ${num(s.funnel.casefiles)}건 · 재검사 ${won(s.prices.recheck)} ${num(s.funnel.rechecks)}건`),
-        h('div', { class: 'scroll-x' }, h('table', {},
-          h('thead', {}, h('tr', {}, h('th', {}, '가격'), h('th', { class: 'num' }, '무료 결과 본 수'), h('th', { class: 'num' }, '정밀 분석 결제'), h('th', { class: 'num' }, '결제율'))),
-          h('tbody', {}, (s.variants || []).map((v) => h('tr', {}, h('td', {}, won(v.price)), h('td', { class: 'num' }, num(v.shown)), h('td', { class: 'num' }, num(v.paid)), h('td', { class: 'num' }, pct(v.rate)))))))),
+          metric('랜딩 → 조회 시작률', pct(k.startRate)),
+          metric('로그인 창 → 가입률', pct(k.signupRate)),
+          metric('조회 시작 → 완료율', pct(k.inputDoneRate)),
+          metric('조회 1건당 API·AI 원가', won(k.costPerCheck)),
+          metric('재사용률', pct(k.reuseRate), '두 번 이상 조회한 방문자'))),
       h('div', { class: 'two row-gap' },
         h('div', { class: 'card' }, h('h2', {}, 'API별 호출량·실패율·원가'), h('p', { class: 'desc' }, '서버 켠 뒤 누적'),
           h('div', { class: 'scroll-x' }, h('table', {},
             h('thead', {}, h('tr', {}, h('th', {}, 'API'), h('th', { class: 'num' }, '호출'), h('th', { class: 'num' }, '실패율'), h('th', { class: 'num' }, '평균 응답'), h('th', { class: 'num' }, '원가'))),
             h('tbody', {}, s.api.length ? s.api.map((a) => h('tr', {}, h('td', {}, API_NAME[a.name] || a.name), h('td', { class: 'num' }, num(a.calls)), h('td', { class: 'num' }, pct(a.failRate)), h('td', { class: 'num' }, `${(a.avgMs / 1000).toFixed(1)}초`), h('td', { class: 'num' }, a.krw ? won(a.krw) : '무료'))) : h('tr', {}, h('td', { colspan: 5, class: 'empty' }, '아직 호출이 없습니다.')),
               h('tr', {}, h('td', {}, '더치트·경찰민원24'), h('td', { class: 'num', colspan: 4 }, '자동 조회 없음 · 직접 조회 안내')))))),
-        h('div', { class: 'card' }, h('h2', {}, '개인정보 자동삭제 현황'), h('p', { class: 'desc' }, '원본은 분석 직후, 리포트는 보관 시간이 지나면 삭제'),
+        h('div', { class: 'card' }, h('h2', {}, '개인정보 자동삭제 현황'), h('p', { class: 'desc' }, '원본은 분석 직후, 조회 기록은 30일 뒤 매시간 자동 삭제'),
           h('div', { class: 'purge' },
             metric('파기한 원본', `${num(s.purge.originals)}건`, '입력 항목 기준'),
-            metric('서버 보관 리포트', '0건', '이용자 기기에 암호화해 24시간'),
+            metric('보관 중인 조회 기록', m ? `${num(m.reportsStored)}건` : '—', '암호화해 30일'),
             metric('마지막 파기', s.purge.lastAt ? time(s.purge.lastAt) : '—', '분석 직후 원본 파기'),
-            metric('집계 저장', s.storage === 'ephemeral' ? '임시' : '파일', s.storage === 'ephemeral' ? '함수 재시작 때 사라짐' : 'data 폴더')))),
+            metric('회원·문의 저장', m ? '데이터베이스' : '임시', m ? 'Supabase 서울' : '함수 재시작 때 사라짐')))),
       h('div', { class: 'card' }, h('h2', {}, '삭제요청·문의·신고'), h('p', { class: 'desc' }, '최근 100건'),
         h('div', { class: 'scroll-x' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, '접수'), h('th', {}, '종류'), h('th', {}, '내용'), h('th', {}, '연락처'), h('th', {}, '처리'))), h('tbody', {}, reqRows)))),
       h('div', { class: 'card' }, h('h2', {}, '관리자 접근로그'), h('p', { class: 'desc' }, '최근 60건'),

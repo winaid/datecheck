@@ -17,8 +17,6 @@ function call(method, url, body, headers = {}) {
     handle(req, res);
   });
 }
-const result = { items: [], totals: { total: 13, checkable: 0, signals: 0, notes: 0 }, meta: { notes: [], ocrLines: 0, ai: false }, subject: {} };
-const preview = (id) => seal({ v: 1, id, result, createdAt: Date.now(), exp: Date.now() + 60_000, plan: null, fullPrice: 7900 });
 const def = (id) => CHECKS.find((c) => c.id === id);
 
 test("확인한 사실이 없으면 '특이사항 없음'이 아니라 '직접 확인 필요'(manual)", async () => {
@@ -42,42 +40,24 @@ test('횟수 제한: 정한 횟수까지 받고 그다음은 막는다, 주소�
   assert.equal(rateLimited('t', '2.2.2.2', rule), false);
 });
 
-test('점검 요청은 같은 주소에서 10분에 12번까지', async () => {
+test('로그인 시도는 같은 주소에서 10분에 20번까지', async () => {
   const h = { 'x-real-ip': '9.9.9.9' };
-  for (let i = 0; i < 12; i += 1) assert.equal((await call('POST', '/api/index?__path=analyze', { input: {} }, h)).code, 400);
-  const r = await call('POST', '/api/index?__path=analyze', { input: {} }, h);
+  for (let i = 0; i < 20; i += 1) assert.equal((await call('POST', '/api/index?__path=auth/login', { email: 'x' }, h)).code, 400);
+  const r = await call('POST', '/api/index?__path=auth/login', { email: 'x' }, h);
   assert.equal(r.code, 429);
   assert.match(r.json.error, /10분쯤 뒤/);
 });
 
-test('화면 이벤트로 결제 수를 부풀릴 수 없고, 복사·인쇄 이벤트는 센다', async () => {
+test('화면 이벤트로 가입·조회 수를 부풀릴 수 없고, 복사·인쇄 이벤트는 센다', async () => {
   const ev = () => ({ ...(adminStats().today?.events || {}) });
   const before = { ...ev() };
-  await call('POST', '/api/index?__path=event', { type: 'paid_full' });
+  await call('POST', '/api/index?__path=event', { type: 'signup' });
+  await call('POST', '/api/index?__path=event', { type: 'inputs_done' });
   await call('POST', '/api/index?__path=event', { type: 'copy' });
   const after = ev();
-  assert.equal(after.paid_full || 0, before.paid_full || 0);
+  assert.equal(after.signup || 0, before.signup || 0);
+  assert.equal(after.inputs_done || 0, before.inputs_done || 0);
   assert.equal((after.copy || 0), (before.copy || 0) + 1);
-});
-
-test('재검사 할인은 처음 정밀 분석을 산 때부터 24시간 — 재검사로 산 리포트로 이어지지 않는다', async () => {
-  const now = Date.now();
-  const fresh = seal({ v: 1, id: 'orig', result, createdAt: now, exp: now + 3_600_000, plan: 'full', paidAt: now - 2 * 3_600_000, fullPaidAt: now - 2 * 3_600_000 });
-  const ok = await call('POST', '/api/index?__path=pay', { token: preview('rc1'), plan: 'full', recheckToken: fresh });
-  assert.equal(ok.json.report.fullPaidAt, now - 2 * 3_600_000); // 재검사 값 — 처음 산 때를 물려받는다
-  const stale = seal({ v: 1, id: 'chain', result, createdAt: now, exp: now + 3_600_000, plan: 'full', paidAt: now - 3_600_000, fullPaidAt: now - 25 * 3_600_000 });
-  const no = await call('POST', '/api/index?__path=pay', { token: preview('rc2'), plan: 'full', recheckToken: stale });
-  assert.ok(no.json.report.fullPaidAt >= now); // 재검사 아님 — 새 정밀 분석
-  // 처음 산 지 24시간이 지난 리포트에는 재검사 제안을 내지 않는다
-  const opened = await call('POST', '/api/index?__path=report', { token: stale });
-  assert.equal(opened.json.offers.recheck, null);
-});
-
-test('이미 연 리포트로 결제를 다시 불러도 보관 시간이 늘지 않는다', async () => {
-  const first = await call('POST', '/api/index?__path=pay', { token: preview('keep1'), plan: 'free' });
-  await new Promise((r) => setTimeout(r, 15));
-  const again = await call('POST', '/api/index?__path=pay', { token: first.json.reportToken, plan: 'free' });
-  assert.equal(again.json.expiresAt, first.json.expiresAt);
 });
 
 test('관리자 키: 한글·다른 길이도 500 없이 401, 열 번 넘게 틀리면 429', async () => {

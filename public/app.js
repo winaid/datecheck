@@ -99,7 +99,8 @@ async function api(path, { body, timeout = 20000, headers = {} } = {}) {
   }
   let j = null;
   try { j = await r.json(); } catch { /* JSON 이 아닌 답 — 관문 오류 화면 등 */ }
-  if (!r.ok) throw Object.assign(new Error(j?.error || (r.status === 413 ? NET.tooLarge : r.status === 504 ? NET.timeout : NET.busy)), { status: r.status });
+  // login·consent — 로그인이 풀렸거나 약관 동의가 필요할 때 서버가 함께 보낸다(부른 곳이 로그인·동의 창을 연다)
+  if (!r.ok) throw Object.assign(new Error(j?.error || (r.status === 413 ? NET.tooLarge : r.status === 504 ? NET.timeout : NET.busy)), { status: r.status, login: Boolean(j?.login), consent: Boolean(j?.consent) });
   if (!j) throw Object.assign(new Error(NET.busy), { status: r.status });
   return j;
 }
@@ -114,12 +115,12 @@ function crashed() {
 addEventListener('error', (e) => { if (String(e.filename || '').startsWith(location.origin)) crashed(); });
 addEventListener('unhandledrejection', (e) => { if (/\/app\.js/.test(String(e.reason?.stack || ''))) crashed(); });
 
-// 설정(검사 항목·가격) — 못 받으면 점검을 시작할 수 없어 다시 받는다
+// 설정(검사 항목·로그인 방법) — 못 받으면 조회를 시작할 수 없어 다시 받는다
 async function loadConfig() {
   try {
-    const c = await api(`/api/config?v=${visitor}`, { headers: { 'x-visitor': visitor }, timeout: 12000 });
+    const c = await api('/api/config', { timeout: 12000 });
     if (!Array.isArray(c.checks) || !c.checks.length) return false;
-    CONFIG = c;
+    CONFIG = { ...CONFIG, ...c };
     return true;
   } catch {
     return false;
@@ -137,8 +138,8 @@ function countUp(el, to, dur = 1100) {
   requestAnimationFrame(f);
 }
 
-// ---------- 설정 (항목 이름·요금은 서버 한 곳에서) ----------
-let CONFIG = { checks: [], plans: {}, addons: {}, jobs: [], official: [] };
+// ---------- 설정 (항목 이름·로그인 방법·조회 한도는 서버 한 곳에서) ----------
+let CONFIG = { checks: [], jobs: [], official: [], auth: { email: true, google: false, kakao: false }, quota: { perDay: 30 }, retentionDays: 30 };
 const NEED = {
   phone: { need: '전화번호', g: 'contact' },
   account: { need: '계좌번호', g: 'contact' },
@@ -147,21 +148,14 @@ const NEED = {
   privacy: { need: '카톡·DM 대화', g: 'chat' },
   avoid: { need: '카톡·DM 대화', g: 'chat' },
   mismatch: { need: '카톡·DM 대화', g: 'chat' }, // 대화 속 말끼리도 본다(서버 needs 와 같게, 2026-10-27)
-  photo: { need: '상대방 사진', g: 'photo' },
-  link: { need: '상대가 보낸 사이트 주소', g: 'link' },
+  photo: { need: '사진', g: 'photo' },
+  link: { need: '받은 사이트 주소', g: 'link' },
   biz: { need: '사업자등록번호', g: 'biz' },
   commerce: { need: '사업자등록번호', g: 'biz' },
   company: { need: '회사명', g: 'biz' },
   job: { need: '직업', g: 'biz' },
 };
-// 2026-10-22 오너 결정 — 무료 점검 + 정밀 분석(방문자마다 시험 가격) + 신고용 정리본·재검사
-const won = (p) => `${Number(p).toLocaleString('ko-KR')}원`;
-const priceText = (plan) => {
-  if (plan === 'free') return '0원';
-  const p = CONFIG.plans?.[plan]?.price ?? CONFIG.addons?.[plan]?.price;
-  return p ? won(p) : '가격 미정';
-};
-const planLabel = (plan) => (plan === 'full' ? '정밀 분석' : '무료 점검');
+// 2026-10-27 오너 — 결제·통신판매 없이. 로그인한 회원은 모든 항목을 그대로 본다(예전 무료/정밀 분석·가격 시험은 없앴다)
 const checkTitle = (id) => CONFIG.checks.find((c) => c.id === id)?.title || '';
 
 // =====================================================================
@@ -259,6 +253,10 @@ function initLanding() {
   // 열기 단추
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-open-wizard]')) { e.preventDefault(); openWizard(); }
+    const au = e.target.closest('[data-open-auth]');
+    if (au) { e.preventDefault(); openAuth({ mode: au.dataset.authMode || 'login' }); }
+    const my = e.target.closest('a[href="/my"]');
+    if (my) { e.preventDefault(); navigate('/my'); }
     if (e.target.closest('[data-open-request]')) openRequest();
     if (e.target.closest('[data-open-privacy]')) openPrivacy();
     const home = e.target.closest('[data-home]');
@@ -277,7 +275,6 @@ function renderCheckGrid() {
     const n = NEED[c.id] || {};
     const card = h('article', { class: 'ck rv', 'data-g': n.g, style: `--d:${(i % 4) * 0.06}s` },
       h('span', { class: 'ck-no' }, pad2(c.no)),
-      h('span', { class: `ck-plan ${c.plan}` }, c.plan === 'full' ? '정밀 분석' : '무료'),
       h('h3', {}, c.title),
       h('p', { class: 'ck-need' }, h('b', {}, '필요한 정보 '), n.need || ''),
       h('div', { class: 'tags' }, c.sources.map((s) => h('span', {}, s))));
@@ -297,7 +294,8 @@ function renderCheckGrid() {
     const f = b.dataset.f;
     $$('.ck', grid).forEach((card) => card.classList.toggle('dim', f !== 'all' && card.dataset.g !== f));
   }));
-  $$('[data-price]').forEach((el) => { el.textContent = priceText(el.dataset.price); });
+  $$('[data-quota]').forEach((el) => { el.textContent = String(CONFIG.quota?.perDay || 30); });
+  $$('[data-retention]').forEach((el) => { el.textContent = String(CONFIG.retentionDays || 30); });
 }
 
 // ---------- 미리 보기: 대화에서 신호 찾기 ----------
@@ -369,23 +367,24 @@ function initDemo() {
 // =====================================================================
 // 입력 팝업
 // =====================================================================
+// 2026-10-27 오너 — 조회 대상은 '나': 내 정보이거나 내가 받은 정보로 안내한다(입력은 이용자 책임, 조회 전 확인)
 const INPUTS = [
-  { key: 'phone', label: '전화번호', desc: '상대가 알려 준 번호' },
-  { key: 'chat', label: '카톡·DM 대화', desc: '캡처, 내보내기 파일, 글' },
-  { key: 'photo', label: '상대방 사진', desc: '프로필 사진 한 장' },
-  { key: 'account', label: '계좌번호', desc: '돈을 보내 달라고 한 계좌' },
-  { key: 'url', label: '상대방이 보낸 URL', desc: '받은 링크, 투자·쇼핑 사이트' },
-  { key: 'company', label: '회사명·직업', desc: '다닌다고 한 회사와 직업' },
-  { key: 'biz', label: '사업자등록번호', desc: '운영한다는 사업체 번호' },
+  { key: 'phone', label: '전화번호', desc: '내 번호나 나에게 연락해 온 번호' },
+  { key: 'chat', label: '카톡·DM 대화', desc: '내가 받은 대화. 캡처, 파일, 글' },
+  { key: 'photo', label: '사진', desc: '내 사진이나 받은 프로필 사진' },
+  { key: 'account', label: '계좌번호', desc: '내 계좌나 입금을 요청받은 계좌' },
+  { key: 'url', label: '받은 링크', desc: '투자·쇼핑 사이트, 받은 주소' },
+  { key: 'company', label: '회사명·직업', desc: '나에게 소개한 회사와 직업' },
+  { key: 'biz', label: '사업자등록번호', desc: '내 사업자나 거래하려는 사업자' },
   // '이름'은 2026-10-26 뺐다 — 분석에 쓰지 않는 정보라 받지 않는다(개인정보 최소 수집, 법 제16조)
   // '쇼핑몰·사업체명'·'상대가 직접 말한 정보'도 2026-10-26 오너 지시로 뺐다
 ];
-const STEP_LABEL = { select: '받은 것 선택', confirm: '입력 확인', run: '점검', preview: '점검 결과', pay: '결제' };
+const STEP_LABEL = { select: '조회할 정보', confirm: '입력 확인', run: '조회' };
 const BANKS = ['KB국민', '신한', '우리', '하나', 'NH농협', 'IBK기업', '카카오뱅크', '토스뱅크', '케이뱅크', '새마을금고', '우체국', '수협', '신협', 'SC제일', '부산', '경남', 'iM뱅크', '광주', '전북', '제주', '기타'];
 
 // chatFile = 카톡 내보내기 파일을 읽은 결과(이 기기에만, 이름 포함) · chatFileText = '나'·'상대'로 바꿔 서버에 보낼 글
 const freshValues = () => ({ phone: '', account: '', bank: '', chatText: '', chatImages: [], chatMode: 'image', chatFile: null, chatFileText: '', photo: '', url: '', company: '', job: '', workplace: '', biz: '' });
-const W = { sel: new Set(), v: freshValues(), steps: ['select'], i: 0, consent: [false, false], id: null, preview: null, plan: 'full', opened: false, lastFocus: null };
+const W = { sel: new Set(), v: freshValues(), steps: ['select'], i: 0, consent: [false, false], opened: false, lastFocus: null };
 
 const digits = (s) => String(s || '').replace(/\D/g, '');
 function fmtPhone(v) {
@@ -465,7 +464,7 @@ W.val = () => {
 };
 
 function buildSteps() {
-  W.steps = ['select', ...INPUTS.map((x) => x.key).filter((k) => W.sel.has(k)), 'confirm', 'run', 'preview', 'pay'];
+  W.steps = ['select', ...INPUTS.map((x) => x.key).filter((k) => W.sel.has(k)), 'confirm', 'run'];
 }
 const curStep = () => W.steps[W.i];
 
@@ -491,8 +490,12 @@ async function compress(file, max, quality = 0.85) {
 }
 
 async function openWizard() {
+  // 로그인해야 조회할 수 있다(2026-10-27 오너). 로그인·동의를 마치면 이어서 연다
+  if (!ME.loaded) await loadMe();
+  if (!ME.user) { openAuth({ then: openWizard, why: '로그인하거나 가입하면 바로 조회를 시작합니다.' }); return; }
+  if (!ME.consent) { openConsent({ then: openWizard }); return; }
   if (!CONFIG.checks.length && !(await loadConfig())) {
-    const close = sheet(h('h2', {}, '지금은 점검을 시작할 수 없어요'),
+    const close = sheet(h('h2', {}, '지금은 조회를 시작할 수 없어요'),
       h('p', { class: 'w' }, navigator.onLine === false ? NET.offline : '서버에서 검사 항목을 받아 오지 못했어요. 인터넷 연결을 확인하고 잠시 뒤 다시 눌러 주세요.'),
       h('button', { class: 'btn btn-rose', type: 'button', style: 'width:100%', onclick: () => { close(); openWizard(); } }, '다시 시도'));
     return;
@@ -528,11 +531,6 @@ function resetWizard() {
   W.steps = ['select'];
   W.i = 0;
   W.consent = [false, false];
-  W.id = null;
-  W.token = null;
-  W.preview = null;
-  W.plan = 'full';
-  W.recheckToken = null;
   W.opened = false;
 }
 
@@ -546,7 +544,7 @@ function buildShell() {
         h('ol', { class: 'wz-track', id: 'wz-track' }),
         h('div', { class: 'wz-meter' },
           h('p', {}, '13개 항목 중'),
-          h('p', {}, h('b', { id: 'wz-meter-n' }, '0'), '개 검사 가능'),
+          h('p', {}, h('b', { id: 'wz-meter-n' }, '0'), '개 조회 가능'),
           h('div', { class: 'bar' }, h('i', { id: 'wz-meter-bar', style: 'width:0%' })))),
       h('div', { class: 'wz-main' },
         h('div', { class: 'wz-head' },
@@ -575,7 +573,7 @@ function updateChrome() {
     track.replaceChildren(...W.steps.filter((s) => s !== 'run').map((s, k) => {
       const idx = W.steps.indexOf(s);
       const label = STEP_LABEL[s] || INPUTS.find((x) => x.key === s)?.label;
-      const cls = idx < W.i ? 'done' : idx === W.i || (step === 'run' && s === 'preview') ? 'cur' : '';
+      const cls = idx < W.i ? 'done' : idx === W.i || (step === 'run' && s === 'confirm') ? 'cur' : '';
       return h('li', { class: cls }, h('i', { 'aria-hidden': 'true' }, idx < W.i ? '' : String(k + 1)), label);
     }));
   }
@@ -587,10 +585,10 @@ function updateChrome() {
     n.textContent = String(ids.length);
     $('#wz-meter-bar').style.width = `${(ids.length / 13) * 100}%`;
   }
-  $('#wz-mmeter').textContent = `${ids.length}/13 검사 가능`;
-  // 왼쪽 단계 목록과 같은 번호 (사전분석 중 화면은 세지 않는다)
+  $('#wz-mmeter').textContent = `${ids.length}/13 조회 가능`;
+  // 왼쪽 단계 목록과 같은 번호 (조회 중 화면은 확인 단계로 센다)
   const visible = W.steps.filter((s) => s !== 'run');
-  const pos = visible.indexOf(step === 'run' ? 'preview' : step) + 1;
+  const pos = visible.indexOf(step === 'run' ? 'confirm' : step) + 1;
   $('#wz-count').textContent = `${pos} / ${visible.length}`;
   $('#wz-prog').style.width = `${(pos / visible.length) * 100}%`;
 }
@@ -693,7 +691,7 @@ const STEPS = {
       },
     }, h('b', {}, x.label), h('span', {}, x.desc))));
     return {
-      body: [...head('알고 있는 정보를 모두 골라 주세요', '많이 고를수록 검사할 수 있는 항목이 늘어납니다. 모든 정보를 넣을 필요는 없습니다.'), grid,
+      body: [...head('조회할 정보를 모두 골라 주세요', '내 정보나 내가 받은 정보를 넣어 주세요. 많이 고를수록 살펴볼 항목이 늘어나며, 모두 넣을 필요는 없습니다.'), grid,
         h('p', { class: 'wz-hint w' }, '이름과 SNS 계정은 받지 않습니다. 사람을 찾는 일이 없도록 입력 칸을 두지 않았습니다.')],
       back: false,
       next: { label: '다음', ok: () => W.sel.size > 0, go: () => { buildSteps(); next(); } },
@@ -703,7 +701,7 @@ const STEPS = {
   phone() {
     const el = input('phone', { type: 'tel', inputmode: 'tel', placeholder: '010-1234-5678' }, fmtPhone);
     return {
-      body: [...head('상대방 전화번호를 입력해 주세요', '상대에게 직접 받은 번호만 넣어 주세요. 해외 번호는 +로 시작하면 됩니다.'), field('전화번호', el)],
+      body: [...head('조회할 전화번호를 입력해 주세요', '내 번호이거나 나에게 연락해 온 번호를 넣어 주세요. 해외 번호는 +로 시작하면 됩니다.'), field('전화번호', el)],
       skip: true,
       next: { label: '다음', ok: () => digits(W.v.phone).length >= 8, why: () => (digits(W.v.phone).length ? '번호가 짧아요. 숫자 8자리 이상 넣어 주세요.' : ''), go: next },
     };
@@ -847,7 +845,7 @@ const STEPS = {
     const v = W.v;
     const box = h('div', { class: 'thumbs' });
     const err = h('p', { class: 'err-msg' });
-    const paint = () => box.replaceChildren(...(v.photo ? [h('div', { class: 'thumb photo-big' }, h('img', { src: v.photo, alt: '상대방 사진' }),
+    const paint = () => box.replaceChildren(...(v.photo ? [h('div', { class: 'thumb photo-big' }, h('img', { src: v.photo, alt: '조회할 사진' }),
       h('button', { type: 'button', 'aria-label': '빼기', onclick: () => { v.photo = ''; paint(); W.refresh(); } }, '×'))] : []));
     const add = async (files) => {
       err.textContent = '';
@@ -858,7 +856,7 @@ const STEPS = {
     };
     paint();
     return {
-      body: [...head('상대방 사진을 올려 주세요', '프로필 사진 한 장이면 됩니다. 사진은 분석에만 쓰고 저장하지 않습니다.'),
+      body: [...head('조회할 사진을 올려 주세요', '내 사진이 다른 곳에 쓰이는지, 받은 프로필 사진이 다른 곳에 있는지 살펴봅니다. 사진은 분석에만 쓰고 서버에 저장하지 않습니다.'),
         dropZone({ onFiles: add, title: '사진을 올려 주세요', sub: '여기에 끌어다 놓거나 눌러서 고릅니다. 붙여넣기도 됩니다.' }), box, err],
       skip: true,
       onPaste: (e) => { const f = pastedImages(e); if (f.length) { e.preventDefault(); add(f); } },
@@ -871,7 +869,7 @@ const STEPS = {
       h('option', { value: '' }, '은행 선택'), BANKS.map((b) => h('option', { value: b, selected: W.v.bank === b }, b)));
     const num = input('account', { inputmode: 'numeric', placeholder: '계좌번호 숫자', 'aria-label': '계좌번호' }, (x) => x.replace(/[^\d-]/g, ''));
     return {
-      body: [...head('계좌번호를 입력해 주세요', '돈을 보내 달라고 한 계좌를 넣어 주세요. 은행은 몰라도 됩니다.'),
+      body: [...head('조회할 계좌번호를 입력해 주세요', '내 계좌이거나 입금을 요청받은 계좌를 넣어 주세요. 은행은 몰라도 됩니다.'),
         h('div', { class: 'fld' }, h('span', { class: 'lbl' }, '계좌'), h('div', { class: 'inp-row' }, bank, num))],
       skip: true,
       focus: num,
@@ -881,12 +879,12 @@ const STEPS = {
 
   url() {
     return {
-      body: [...head('상대방이 보낸 링크를 넣어 주세요', '투자 사이트, 쇼핑몰, 받은 링크를 넣어 주세요. 여러 개면 줄을 바꿔 적습니다.'),
+      body: [...head('받은 링크를 넣어 주세요', '투자 사이트, 쇼핑몰, 받은 주소를 넣어 주세요. 여러 개면 줄을 바꿔 적습니다.'),
         field('링크', textarea('url', { class: 'inp sm', placeholder: 'https://', spellcheck: 'false' }), h('p', { class: 'fld-help' }, '사이트에 직접 접속하지 않고 공개된 등록 정보만 확인합니다.'))],
       skip: true,
       next: {
         label: '다음', ok: () => siteUrls(W.v.url).length > 0, go: next,
-        why: () => (!W.v.url.trim() ? '' : W.v.url.split(/[\s,]+/).some(isSnsUrl) ? 'SNS·유튜브·블로그 주소는 확인하지 않아요. 투자·쇼핑 사이트처럼 상대가 보낸 사이트 주소를 넣어 주세요.' : '링크 모양이 아니에요. example.com처럼 점(.)이 들어간 주소를 넣어 주세요.'),
+        why: () => (!W.v.url.trim() ? '' : W.v.url.split(/[\s,]+/).some(isSnsUrl) ? 'SNS·유튜브·블로그 주소는 확인하지 않아요. 투자·쇼핑 사이트처럼 받은 사이트 주소를 넣어 주세요.' : '링크 모양이 아니에요. example.com처럼 점(.)이 들어간 주소를 넣어 주세요.'),
       },
     };
   },
@@ -918,7 +916,7 @@ const STEPS = {
     co.addEventListener('input', paintCo);
     paintCo();
     return {
-      body: [...head('회사와 직업을 알려 주세요', '상대가 다닌다고 한 회사나 직업을 넣어 주세요. 하나만 넣어도 됩니다.'),
+      body: [...head('회사와 직업을 알려 주세요', '나에게 소개한 회사나 직업을 넣어 주세요. 하나만 넣어도 됩니다.'),
         field('회사명', co, coHelp),
         h('div', { class: 'fld' }, h('span', { class: 'lbl' }, '직업'), chips), work],
       skip: true,
@@ -939,7 +937,7 @@ const STEPS = {
     el.addEventListener('input', paint);
     paint();
     return {
-      body: [...head('사업자등록번호를 입력해 주세요', '상대가 운영한다고 한 사업체의 번호입니다.'), field('사업자등록번호', el, help)],
+      body: [...head('사업자등록번호를 입력해 주세요', '내 사업자이거나 거래하려는 사업체의 번호를 넣어 주세요.'), field('사업자등록번호', el, help)],
       skip: true,
       next: { label: '다음', ok: () => digits(W.v.biz).length === 10, go: next },
     };
@@ -960,19 +958,25 @@ const STEPS = {
       h('dt', {}, x.label), h('dd', {}, mask[x.key]?.() || ''),
       h('button', { type: 'button', class: 'link-btn', onclick: () => go(W.steps.indexOf(x.key), -1) }, '수정')));
     const ids = exactIds();
-    const boxes = ['상대방에게 직접 받은 정보만 입력했습니다.', '분석이 끝나면 서버에서 원본을 지우고, 리포트에서 다시 볼 수 있게 이 기기에만 24시간 보관하는 것을 확인했습니다.'].map((t, k) => h('label', { class: 'consent' },
+    // 조회 전 확인 — 입력과 결과 이용의 책임은 이용자에게 있다(2026-10-27 오너). 서버도 attest 가 없으면 받지 않는다
+    const days = CONFIG.retentionDays || 30;
+    const boxes = [
+      '입력한 정보는 제 정보이거나 제가 받은 정보이며, 사기 피해를 막기 위해 확인하려는 것입니다. 결과를 다른 사람을 괴롭히거나 퍼뜨리는 데 쓰지 않으며, 입력과 이용에 대한 책임은 저에게 있습니다.',
+      `원본(사진·대화·번호)은 분석이 끝나면 서버에서 지우고, 조회 결과는 암호화해 내 계정에 ${days}일 보관하는 것을 확인했습니다.`,
+    ].map((t, k) => h('label', { class: 'consent' },
       h('input', { type: 'checkbox', checked: W.consent[k], onchange: (e) => { W.consent[k] = e.target.checked; } }), h('span', {}, t)));
     // 생성형 AI 사전 고지(AI기본법 제31조 제1항, 2026-01-22 시행) — 대화·사진을 고른 경우에만 AI 를 쓰므로 그때 보여 준다
     const usesAi = W.sel.has('chat') || W.sel.has('photo');
+    const used = ME.usage?.today;
     return {
-      body: [...head('이대로 무료 점검을 시작할까요?', '번호·링크·사업자 결과는 무료로 바로 보여 드리고, 대화에서 찾은 신호 수도 알려 드립니다.'),
+      body: [...head('이대로 조회할까요?', '고른 정보로 살펴볼 수 있는 항목을 모두 확인하고, 결과를 바로 보여 드립니다.'),
         h('dl', { class: 'sum' }, rows),
-        h('p', { class: 'pv-line' }, `총 13개 항목 중 ${ids.length}개 검사 가능`),
-        usesAi ? h('p', { class: 'ai-note w' }, h('b', {}, '생성형 AI 사용 안내'), ' 대화와 사진은 생성형 AI인 구글 제미나이로 분석하고, 대화 캡처의 글자도 AI가 읽습니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.') : null,
+        h('p', { class: 'pv-line' }, `총 13개 항목 중 ${ids.length}개 조회`, Number.isFinite(used) ? h('small', { class: 'pv-quota' }, ` · 최근 24시간 ${used}/${ME.usage.perDay}번 조회`) : null),
+        usesAi ? h('p', { class: 'ai-note w' }, h('b', {}, '생성형 AI 사용 안내'), ' 대화와 사진은 생성형 AI인 구글 제미나이로 분석하고, 대화 캡처의 글자도 AI가 읽습니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.') : null,
         boxes],
       next: {
-        label: '무료 점검 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next(),
-        why: () => (!ids.length ? '고른 정보로는 점검할 항목이 없어요. 이전으로 돌아가 정보를 하나 더 넣어 주세요.' : '아래 두 칸에 모두 체크하면 시작할 수 있어요.'),
+        label: '조회 시작', rose: true, ok: () => W.consent.every(Boolean) && ids.length > 0, go: () => next(),
+        why: () => (!ids.length ? '고른 정보로는 조회할 항목이 없어요. 이전으로 돌아가 정보를 하나 더 넣어 주세요.' : '아래 두 칸에 모두 체크하면 시작할 수 있어요.'),
       },
     };
   },
@@ -986,117 +990,21 @@ const STEPS = {
     }));
     const err = h('p', { class: 'err-msg', role: 'alert' });
     return {
-      body: [...head('받은 메시지와 정보를 살펴보고 있습니다', '대화를 분석하고 링크·사업자 같은 공개 정보를 확인합니다. 보통 10초 안팎 걸립니다.'), bar, list, err],
+      body: [...head('조회하고 있습니다', '대화를 분석하고 링크·사업자 같은 공개 정보를 확인합니다. 보통 10초 안팎 걸립니다.'), bar, list, err],
       back: false,
       after: () => runAnalysis(list, bar.firstChild, err),
     };
   },
 
-  preview() {
-    const p = W.preview;
-    const items = p.items.filter((i) => i.checkable);
-    const skipped = p.items.length - items.length;
-    const fullItems = items.filter((i) => i.plan === 'full');
-    const fullSignals = fullItems.reduce((s, i) => s + i.signalCount, 0);
-    const freeSignals = items.filter((i) => i.plan !== 'full').reduce((s, i) => s + i.signalCount, 0);
-    const chip = (i) => (STATUS_CHIP[i.status] || STATUS_CHIP.clear)(i);
-    const nN = h('b', {}, '0');
-    const nS = h('b', {}, '0');
-    // 정밀 분석으로 볼 것이 없으면(대화·사진 없음) 무료 점검을 먼저 고른다
-    if (!fullItems.length) W.plan = 'free';
-    W.recheckToken = recentFullToken();
-    const fullPrice = W.recheckToken ? CONFIG.addons?.recheck?.price : CONFIG.plans?.full?.price;
-    const desc = {
-      free: `번호·계좌 직접 조회 안내, 링크·사업자 결과${freeSignals ? `, 확인 신호 ${freeSignals}건` : ''}`,
-      full: W.recheckToken
-        ? '24시간 안에 정밀 분석을 받아 재검사 값이 적용됩니다. 대화 근거 문장, 사진 도용 검색, 대화 순서 정리'
-        : `무료 결과 전부와 대화 근거 문장${fullSignals ? ` ${fullSignals}건` : ''}, 사진 도용 검색, 대화 순서 정리, 다음에 할 일`,
-    };
-    const plans = h('div', { class: 'plan-pick' }, ['free', 'full'].map((k) => h('button', {
-      class: 'pp', type: 'button', 'aria-pressed': String(W.plan === k), disabled: k === 'full' && !fullItems.length,
-      onclick: (e) => { W.plan = k; $$('.pp', plans).forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); },
-    },
-    k === 'full' && fullSignals ? h('span', { class: 'rec' }, '추천') : null,
-    h('b', {}, k === 'full' && W.recheckToken ? '정밀 분석 · 재검사' : planLabel(k)),
-    h('p', { class: 'pp-price' }, k === 'full' ? (fullPrice ? won(fullPrice) : '가격 미정') : '0원'),
-    h('span', {}, k === 'full' && !fullItems.length ? '대화나 사진을 넣으면 고를 수 있습니다' : desc[k]))));
-    const openErr = h('p', { class: 'err-msg', role: 'alert' });
-    return {
-      body: [...head('무료 점검 결과', null),
-        h('p', { class: 'pv-line' }, h('span', { class: 'nw' }, `총 13개 항목 중 ${p.totals.checkable}개 점검`), ' / ', h('span', { class: 'nw' }, `확인 신호 ${p.totals.signals}개 발견`)),
-        h('div', { class: 'pv-stat' },
-          h('div', {}, h('p', {}, '점검한 항목'), nN, h('p', {}, '13개 중')),
-          h('div', { class: 'sig' }, h('p', {}, '확인 신호'), nS, h('p', {}, p.totals.notes ? `참고 ${p.totals.notes}건 별도` : '건'))),
-        p.notes?.length ? h('p', { class: 'notice', style: 'margin-bottom:16px' }, p.notes.join(' ')) : null,
-        h('div', { class: 'pv-list' }, items.map((i, k) => {
-          const [cls, txt] = chip(i);
-          return h('div', { class: 'pv-row', style: `animation-delay:${k * 0.05}s` },
-            h('span', { class: 'no' }, pad2(i.no)),
-            h('span', {}, i.title, h('span', { class: 'lock' }, i.plan === 'full' ? ' · 정밀 분석' : ' · 무료')),
-            h('span', { class: `chip-st ${cls}` }, txt));
-        })),
-        skipped ? h('p', { class: 'pv-more' }, `정보가 없어 점검하지 않은 항목 ${skipped}개`) : null,
-        h('p', { class: 'lbl', style: 'font-weight:800;margin-bottom:10px' }, '리포트 고르기'),
-        plans, openErr],
-      back: false,
-      after: () => { countUp(nN, p.totals.checkable, 900); countUp(nS, p.totals.signals, 1100); track('preview_view'); },
-      next: {
-        label: '리포트 열기', rose: true, ok: () => true,
-        go: async () => {
-          track('plan_view');
-          if (W.plan !== 'free') { next(); return; }
-          const btn = $('#wz-next');
-          btn.disabled = true;
-          openErr.textContent = '';
-          try {
-            await payAndOpen({ token: W.token, plan: 'free', visitor });
-          } catch (e) {
-            openErr.textContent = e.message;
-            btn.disabled = false;
-          }
-        },
-      },
-    };
-  },
-
-  pay() {
-    const err = h('p', { class: 'err-msg', role: 'alert' });
-    const recheck = Boolean(W.recheckToken);
-    return {
-      body: [...head('결제', '구독 없이 이번 점검 한 건만 결제합니다.'),
-        h('div', { class: 'pay-box' }, h('dl', {},
-          h('dt', {}, '상품'), h('dd', {}, recheck ? 'DATE CHECK 재검사(정밀 분석)' : 'DATE CHECK 정밀 분석'),
-          h('dt', {}, '점검 항목'), h('dd', {}, `${W.preview.totals.checkable}개`),
-          h('dt', {}, '리포트 보관'), h('dd', {}, '결제 후 24시간'),
-          h('dt', {}, '금액'), h('dd', {}, priceText(recheck ? 'recheck' : 'full')))),
-        h('p', { class: 'notice w' }, '시험판이라 결제 수단이 연결돼 있지 않습니다. 아래 버튼을 누르면 테스트 결제로 처리됩니다. 리포트를 연 뒤에는 디지털 콘텐츠 특성상 환불이 제한될 수 있습니다.'),
-        err],
-      backTo: 'preview',
-      next: {
-        label: '테스트 결제 완료', rose: true, ok: () => true,
-        go: async () => {
-          const btn = $('#wz-next');
-          btn.disabled = true;
-          err.textContent = '';
-          try {
-            await payAndOpen({ token: W.token, plan: 'full', visitor, recheckToken: W.recheckToken || undefined });
-          } catch (e) {
-            err.textContent = e.message;
-            btn.disabled = false;
-          }
-        },
-      },
-    };
-  },
 };
 
-// 결제(시험판)하고 리포트로 — 무료 점검도 같은 길로 연다
-async function payAndOpen(body) {
-  const j = await api('/api/pay', { body });
-  keepReport(j);
-  await saveInputs(j.id, j.expiresAt, inputSnapshot());
+// 조회가 끝나면 결과를 들고 바로 리포트로 — 넣은 원본은 이 기기에만(다시 보기용)
+async function openResult(j) {
+  reportCache.set(j.id, j.report);
+  await saveInputs(j.id, Date.now() + INPUT_TTL, inputSnapshot());
   resetWizard();
   closeWizard();
+  loadMe();
   navigate(`/report/${j.id}`);
 }
 
@@ -1113,7 +1021,7 @@ async function runAnalysis(list, bar, err) {
     bar.style.width = `${Math.min(88, (k / rows.length) * 88)}%`;
   }, reduce ? 50 : 520);
   try {
-    const body = JSON.stringify({ visitor, input: W.val() });
+    const body = JSON.stringify({ visitor, attest: W.consent.every(Boolean), input: W.val() });
     // 서버 함수가 받는 요청 크기 한도(4.5MB) 안으로
     if (body.length > 4_200_000) throw new Error('올린 사진이 너무 큽니다. 캡처 수를 줄여 주세요.');
     // 서버 함수는 60초까지 돈다 — 그보다 조금 길게 기다린다
@@ -1130,15 +1038,15 @@ async function runAnalysis(list, bar, err) {
       }
     }
     bar.style.width = '100%';
-    W.id = j.id;
-    W.token = j.token;
-    W.preview = j.preview;
     await sleep(450);
-    go(W.steps.indexOf('preview'), 1);
+    await openResult(j);
   } catch (e) {
     done = true;
     clearInterval(tick);
     rows.forEach((r) => r.classList.remove('go'));
+    // 조회 중에 로그인이 풀렸거나 약관이 바뀌었으면 그 창을 열고, 마치면 같은 입력으로 다시 조회한다
+    if (e.login) { ME.user = null; paintAuth(); openAuth({ then: () => go(W.steps.indexOf('run'), 0), why: '로그인이 풀렸어요. 다시 로그인하면 이어서 조회합니다.' }); }
+    else if (e.consent) { ME.consent = false; openConsent({ then: () => go(W.steps.indexOf('run'), 0) }); }
     err.textContent = e.message;
     const foot = $('#wz-foot');
     foot.hidden = false;
@@ -1160,13 +1068,14 @@ addEventListener('popstate', route);
 
 function route() {
   const m = location.pathname.match(/^\/report\/(example|[A-Za-z0-9_-]{8,20})$/);
+  const my = location.pathname === '/my';
   const landing = $('#landing');
   const view = $('#report-view');
-  if (m) {
+  if (m || my) {
     landing.hidden = true;
     view.hidden = false;
     $('#nav').classList.add('solid');
-    showReport(m[1]);
+    if (my) showMy(); else showReport(m[1]);
   } else {
     landing.hidden = false;
     view.hidden = true;
@@ -1369,23 +1278,17 @@ function linkRow(links, itemId) {
 
 // 'AI 생성' 표시 — 생성형 AI(제미나이)가 쓴 설명(by: 'ai')에 붙인다. AI기본법 제31조 제2항(결과물 표시), 2026-01-22 시행
 const aiChip = (s) => (s?.by === 'ai' ? h('span', { class: 'chip-ai', title: '생성형 AI인 구글 제미나이가 작성한 설명입니다' }, 'AI 생성') : null);
-const hasAiText = (items) => (items || []).some((i) => !i.locked && [...(i.signals || []), ...(i.facts || [])].some((s) => s.by === 'ai'));
+const hasAiText = (items) => (items || []).some((i) => [...(i.signals || []), ...(i.facts || [])].some((s) => s.by === 'ai'));
 
 function itemCard(it, id) {
   const [cls, txt] = (STATUS_CHIP[it.status] || STATUS_CHIP.clear)(it);
-  const card = h('article', { class: `it ${it.status}${it.locked ? ' locked' : ''}` },
+  const card = h('article', { class: `it ${it.status}` },
     h('div', { class: 'it-top' },
       h('span', { class: 'it-no' }, pad2(it.no)),
       h('h3', {}, glue(it.title)),
-      it.locked ? null : inputBtn(it),
+      inputBtn(it),
       h('span', { class: `chip-st ${cls}` }, txt)),
-    h('div', { class: 'tags' }, (it.sources || []).filter((s) => !['더치트 API', '공개 웹 언급'].includes(s)).map((s) => h('span', {}, s)), ['phone', 'account'].includes(it.id) && (it.sources || []).includes('더치트 API') ? h('span', {}, '경찰민원24·더치트 직접 조회') : null, it.plan === 'full' ? h('span', {}, '정밀 분석') : null));
-  if (it.locked) {
-    card.append(h('div', { class: 'lock-cover' },
-      h('p', { class: 'w' }, it.signalCount ? `이 항목에서 확인 신호 ${it.signalCount}건이 나왔습니다. 근거 문장은 정밀 분석에서 볼 수 있습니다.` : '이 항목의 근거와 상세 내용은 정밀 분석에서 볼 수 있습니다.'),
-      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(id) }, `정밀 분석 열기 · ${upgradePrice()}`)));
-    return card;
-  }
+    h('div', { class: 'tags' }, (it.sources || []).filter((s) => !['더치트 API', '공개 웹 언급'].includes(s)).map((s) => h('span', {}, s)), ['phone', 'account'].includes(it.id) && (it.sources || []).includes('더치트 API') ? h('span', {}, '경찰민원24·더치트 직접 조회') : null));
   for (const s of it.signals || []) {
     card.append(h('div', { class: 'sg' },
       h('div', { class: 'sg-t' }, h('span', { class: `chip-st ${s.level === 'signal' ? 'st-signal' : 'st-note'}` }, s.level === 'signal' ? '확인 신호' : '참고'), aiChip(s), h('span', {}, glue(s.title))),
@@ -1399,7 +1302,7 @@ function itemCard(it, id) {
   const pend = (it.pending || []).filter((p) => p.label !== '더치트 API');
   if (pend.length) card.append(h('div', { class: 'pend' }, pend.map((p) => h('div', {}, h('b', {}, glue(p.label)), glue(p.text)))));
   for (const el of linkRow(it.links, it.id) || []) if (el) card.append(el);
-  // 정밀 분석 — 신호가 있는 대화 항목에는 '다음에 할 일'
+  // 신호가 있는 항목에는 '다음에 할 일'
   if (NEXT_STEP[it.id] && (it.signals || []).length) card.append(h('div', { class: 'next-step' }, h('b', {}, '다음에 할 일'), h('ul', {}, NEXT_STEP[it.id].map((t) => h('li', { class: 'w' }, t)))));
   return card;
 }
@@ -1413,52 +1316,12 @@ const NEXT_STEP = {
   photo: ['같은 사진이 나온 페이지의 인물과 상대가 같은 사람인지 영상통화로 확인하세요.'],
 };
 
-// ---------- 리포트 보관: 서버가 아니라 이 기기에, 암호화된 봉투로 24시간 ----------
-const RKEY = 'dc-r-';
+// ---------- 조회 기록: 서버(내 계정)에 암호화해 30일. 이 화면에서 한 번 받은 것은 기억해 둔다 ----------
 const reportCache = new Map();
-const unsaved = new Set();
-function keepReport(j) {
-  try {
-    localStorage.setItem(RKEY + j.id, JSON.stringify({ token: j.reportToken, exp: j.expiresAt, plan: j.report?.plan || null, paidAt: j.report?.paidAt || null, fullPaidAt: j.report?.fullPaidAt || null }));
-    unsaved.delete(j.id);
-  } catch {
-    unsaved.add(j.id); // 저장 못 해도 이번 화면에서는 연다 — 리포트 위에 안내
-  }
-  if (j.report) reportCache.set(j.id, j.report);
-}
-const forgetReport = (id) => { try { localStorage.removeItem(RKEY + id); } catch { /* 없음 */ } };
-// 재검사 값 — 이 기기에서 24시간 안에 정밀 분석을 결제한 리포트가 있으면 그 봉투를 함께 보낸다(서버가 다시 확인)
-function recentFullToken() {
-  try {
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const k = localStorage.key(i);
-      if (!k?.startsWith(RKEY)) continue;
-      const v = storedReport(k.slice(RKEY.length));
-      // 24시간은 처음 정밀 분석을 산 때부터(서버와 같게) — 재검사로 산 리포트는 fullPaidAt 이 처음 산 때다
-      const since = v?.fullPaidAt || v?.paidAt;
-      if (v?.plan === 'full' && since && Date.now() - since < 86400000) return v.token;
-    }
-  } catch { /* 없음 */ }
-  return null;
-}
-function storedReport(id) {
-  try {
-    const s = JSON.parse(localStorage.getItem(RKEY + id) || 'null');
-    if (s && s.exp > Date.now()) return s;
-    localStorage.removeItem(RKEY + id);
-  } catch { /* 없음 */ }
-  return null;
-}
-function purgeReports() {
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
-      const k = localStorage.key(i);
-      if (k?.startsWith(RKEY)) storedReport(k.slice(RKEY.length));
-    }
-  } catch { /* 없음 */ }
-}
+// 넣은 원본(사진·대화)은 서버로 다시 보내지 않고 이 기기에만 24시간 — 조회 기록(30일)과 따로 지운다
+const INPUT_TTL = 24 * 3600 * 1000;
 
-// ---------- 넣은 원본: 리포트에서 다시 볼 수 있게 이 기기에만(IndexedDB — 사진이 커서) 리포트와 같은 24시간. 서버로는 다시 보내지 않는다 ----------
+// ---------- 넣은 원본: 리포트에서 다시 볼 수 있게 이 기기에만(IndexedDB — 사진이 커서) 24시간. 서버로는 다시 보내지 않는다 ----------
 let inputDbP = null;
 function inputDb() {
   if (!inputDbP) {
@@ -1491,8 +1354,7 @@ const deleteInputs = (id) => idb('readwrite', (st) => st.delete(id)).catch(() =>
 async function loadInputs(id) {
   try {
     const r = await idb('readonly', (st) => st.get(id));
-    // 정밀 분석으로 올리면 리포트 보관 시간이 다시 24시간 — 리포트가 남아 있는 동안은 함께 보여 준다
-    if (r && (r.exp > Date.now() || storedReport(id))) return r.v;
+    if (r && r.exp > Date.now()) return r.v;
   } catch { /* 저장 막힘 */ }
   return null;
 }
@@ -1502,22 +1364,36 @@ function purgeInputs() {
     c.onsuccess = () => {
       const cur = c.result;
       if (!cur) return;
-      if (!(cur.value?.exp > Date.now()) && !storedReport(String(cur.key))) cur.delete();
+      if (!(cur.value?.exp > Date.now())) cur.delete();
       cur.continue();
     };
     return c;
   }).catch(() => {});
 }
 
-// 이 기기에서 리포트와 원본을 바로 지운다
-function askForget(id) {
-  const close = sheet(h('h2', {}, '이 기기에서 지울까요?'),
-    h('p', { class: 'w' }, '리포트와 넣은 원본(사진·대화·번호)을 이 기기에서 바로 지웁니다. 지우면 다시 열 수 없으니, 필요한 내용은 먼저 ‘PDF로 저장’으로 남겨 두세요.'),
+// 조회 기록을 지운다 — 내 계정의 기록과 이 기기에 둔 원본을 함께
+function askDelete(id, after) {
+  const close = sheet(h('h2', {}, '이 조회 기록을 지울까요?'),
+    h('p', { class: 'w' }, '내 계정에 남은 조회 결과와 이 기기에 둔 사진, 대화, 번호 원본을 바로 지웁니다. 지우면 다시 열 수 없으니, 필요한 내용은 먼저 ‘PDF로 저장’으로 남겨 두세요.'),
     h('div', { class: 'sheet-btns' },
       h('button', { class: 'btn btn-line', type: 'button', onclick: () => close() }, '취소'),
       h('button', {
         class: 'btn btn-rose', type: 'button',
-        onclick: async () => { forgetReport(id); reportCache.delete(id); await deleteInputs(id); close(); toast('이 기기에서 지웠습니다'); navigate('/'); },
+        onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          try {
+            await api('/api/report/delete', { body: { id } });
+          } catch (x) {
+            e.currentTarget.disabled = false;
+            toast(x.message);
+            return;
+          }
+          reportCache.delete(id);
+          await deleteInputs(id);
+          close();
+          toast('조회 기록을 지웠습니다');
+          if (after) after(); else navigate('/my');
+        },
       }, '지우기')));
 }
 
@@ -1562,7 +1438,7 @@ const CHAT_ITEM_IDS = ['money', 'invest', 'privacy', 'avoid', 'mismatch'];
 function chatQuotes() {
   const out = [];
   for (const it of REPORT_ITEMS) {
-    if (!CHAT_ITEM_IDS.includes(it.id) || it.locked) continue;
+    if (!CHAT_ITEM_IDS.includes(it.id)) continue;
     for (const s of it.signals || []) for (const e of s.evidence || []) if (e?.match?.trim().length >= 2) out.push({ q: e.match.trim(), title: s.title });
   }
   return out;
@@ -1610,48 +1486,12 @@ function openInputs({ view, rows, chat, photo }) {
     chat?.chatImages?.length ? [h('p', { class: 'in-lbl' }, `대화 캡처 ${chat.chatImages.length}장`), chat.chatImages.map((src, k) => h('img', { class: 'in-img', src, alt: `대화 캡처 ${k + 1}` }))] : null);
 }
 
-// 리포트의 '정밀 분석 열기' 값 — 재검사 자격이 있으면 실제로 내는 재검사 값을 보여 준다.
-// 버튼에는 9,900원이 보이는데 재검사 봉투를 같이 보내 2,900원으로 처리되던 것(2026-10-27)
-function upgradePrice() {
-  return recentFullToken() && CONFIG.addons?.recheck?.price ? `재검사 ${won(CONFIG.addons.recheck.price)}` : OFFER.full ? won(OFFER.full) : priceText('full');
-}
-
-// 무료 점검 → 정밀 분석, 신고용 정리본 추가 (시험판 결제)
-async function upgrade(id, addon) {
-  if (id === EXAMPLE_ID) { toast('예시 리포트에서는 쓸 수 없어요. 새로 점검하면 쓸 수 있어요.'); return; }
-  const s = storedReport(id);
-  if (!s) {
-    toast(unsaved.has(id) ? '이 브라우저는 리포트를 저장하지 못해 추가할 수 없어요. 새로 점검해 주세요.' : '이 기기에 리포트가 없거나 보관 시간(24시간)이 지났어요. 새로 점검해 주세요.');
-    return;
-  }
-  const body = addon ? { token: s.token, addon } : { token: s.token, plan: 'full', visitor, recheckToken: recentFullToken() || undefined };
-  let j;
-  try {
-    j = await api('/api/pay', { body });
-  } catch (e) {
-    toast(e.message);
-    return;
-  }
-  keepReport(j);
-  toast(addon ? '신고용 정리본을 만들었습니다' : '정밀 분석으로 열었습니다');
-  await showReport(id);
-  if (addon === 'casefile') openCasefile(j.report);
-}
-
-// ---------- 리포트 덧붙이는 칸: 대화 순서 정리 · 신고용 정리본 · 재검사 (2026-10-22) ----------
-let OFFER = {};
+// ---------- 리포트 덧붙이는 칸: 대화 순서 정리 · 신고용 정리본 ----------
 const ymdText = (d) => `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`;
 
 function timelineSec(j) {
   const tl = j.timeline;
   if (!tl) return null;
-  if (tl.locked) {
-    if (!tl.count) return null;
-    return h('section', { class: 'rp-sec' }, h('div', { class: 'tl-lock' },
-      h('h2', { class: 'rp-sec-t' }, '대화 순서 정리'),
-      h('p', { class: 'w' }, `상대가 한 말 가운데 확인할 말 ${tl.count}줄을 대화 순서대로 정리했습니다. 처음 돈 이야기가 나온 곳도 짚어 드립니다.`),
-      h('button', { class: 'btn btn-rose btn-sm', type: 'button', onclick: () => upgrade(j.id) }, `정밀 분석 열기 · ${upgradePrice()}`)));
-  }
   const whole = inputParts('money', REPORT_INPUTS);
   return h('section', { class: 'rp-sec' },
     h('h2', { class: 'rp-sec-t' }, '대화 순서 정리', h('small', {}, tl.rows.length ? `전체 ${tl.total}줄 중 ${tl.rows.length}줄` : `전체 ${tl.total}줄`),
@@ -1666,22 +1506,10 @@ function timelineSec(j) {
 }
 
 function casefileSec(j) {
-  if (j.casefile) {
-    return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card on' },
-      h('div', {}, h('b', {}, '신고용 정리본'), h('p', { class: 'w' }, '상대 정보, 확인 신호, 대화 순서, 챙길 자료와 신고처를 한 장으로 정리했습니다.')),
-      h('button', { class: 'btn btn-navy', type: 'button', onclick: () => openCasefile(j) }, '정리본 보기·인쇄')));
-  }
-  if (!OFFER.casefile) return null;
-  return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card' },
-    h('div', {}, h('b', {}, '신고용 정리본'), h('p', { class: 'w' }, '돈을 보냈거나 신고를 생각하고 있다면, 경찰 신고에 붙일 상대 정보·확인 신호·대화 순서·챙길 자료를 한 장으로 만들어 드립니다.')),
-    h('button', { class: 'btn btn-rose', type: 'button', onclick: () => upgrade(j.id, 'casefile') }, `정리본 만들기 · ${won(OFFER.casefile)}`)));
-}
-
-function recheckSec(j) {
-  if (!OFFER.recheck) return null;
-  return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card re' },
-    h('div', {}, h('b', {}, '새 대화가 왔나요?'), h('p', { class: 'w' }, `이 리포트를 받은 뒤 24시간 안에는 새 대화나 다른 상대를 ${won(OFFER.recheck)}에 정밀 분석합니다.`)),
-    h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '재검사 시작')));
+  if (!j.casefile) return null;
+  return h('section', { class: 'rp-sec' }, h('div', { class: 'cf-card on' },
+    h('div', {}, h('b', {}, '신고용 정리본'), h('p', { class: 'w' }, '돈을 보냈거나 신고를 생각하고 있다면, 조회한 정보·확인 신호·대화 순서·챙길 자료와 신고처를 한 장으로 정리한 문서를 쓰세요.')),
+    h('button', { class: 'btn btn-navy', type: 'button', onclick: () => openCasefile(j) }, '정리본 보기·인쇄')));
 }
 
 // 신고용 정리본 — 화면 위 문서로 열고, 인쇄하면 이 문서만 나온다
@@ -1690,20 +1518,20 @@ function openCasefile(j) {
   if (!cf) return;
   const sub = cf.subject || {};
   const info = [['전화번호', sub.phone], ['계좌', sub.account], ['사이트 주소', sub.url], ['회사', sub.company], ['사업자등록번호', sub.biz], ['직업·근무처', sub.job]].filter(([, v]) => v);
-  const sigItems = (j.items || []).filter((i) => i.checkable && !i.locked && (i.signals || []).length);
-  const rows = j.timeline && !j.timeline.locked ? j.timeline.rows : [];
+  const sigItems = (j.items || []).filter((i) => i.checkable && (i.signals || []).length);
+  const rows = j.timeline?.rows || [];
   const quoteText = (e) => `${e.before || ''}${e.match || ''}${e.after || ''}`;
   const doc = h('article', { class: 'cf-doc' },
     h('header', { class: 'cf-h' },
       h('p', { class: 'cf-eyebrow' }, 'DATE CHECK'),
       h('h1', {}, '사이버사기 신고용 정리본'),
-      h('p', {}, `작성 ${ymdText(new Date())} · 점검 ${ymdText(new Date(j.createdAt))}`)),
+      h('p', {}, `작성 ${ymdText(new Date())} · 조회 ${ymdText(new Date(j.createdAt))}`)),
     h('p', { class: 'cf-disc w' }, `받은 메시지와 정보를 DATE CHECK가 분석한 결과를 정리한 참고 자료입니다. 사기 여부는 수사기관이 판단합니다.${hasAiText(sigItems) ? ' ‘AI 생성’ 표시는 생성형 AI가 작성한 내용입니다.' : ''}`),
-    h('h2', {}, '1. 상대방 정보'),
-    info.length ? h('dl', { class: 'cf-dl' }, info.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : h('p', { class: 'cf-empty' }, '입력한 상대방 정보가 없습니다.'),
+    h('h2', {}, '1. 조회한 정보'),
+    info.length ? h('dl', { class: 'cf-dl' }, info.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : h('p', { class: 'cf-empty' }, '입력한 번호·계좌·주소 정보가 없습니다.'),
     h('h2', {}, '2. 대화에서 확인된 내용'),
     rows.length ? h('ol', { class: 'cf-tl' }, rows.map((r) => h('li', {}, h('b', {}, `${r.n}번째 말${r.firstMoney ? ' · 처음 돈 이야기' : ''}`), h('span', {}, `“${r.text}”`), r.tags.length || r.amount ? h('small', {}, [r.amount, ...r.tags].filter(Boolean).join(' · ')) : null)))
-      : h('p', { class: 'cf-empty' }, j.plan === 'full' ? '돈 이야기나 확인 신호가 나온 말은 없었습니다.' : '대화 순서 정리는 정밀 분석에 들어 있습니다.'),
+      : h('p', { class: 'cf-empty' }, j.timeline ? '돈 이야기나 확인 신호가 나온 말은 없었습니다.' : '넣은 대화가 없습니다.'),
     h('h2', {}, '3. 확인 신호 요약'),
     sigItems.length ? h('ul', { class: 'cf-sig' }, sigItems.flatMap((i) => i.signals.map((s) => h('li', {},
       h('b', {}, `${i.title} · ${s.title}${s.by === 'ai' ? ' · AI 생성' : ''}`),
@@ -1713,7 +1541,7 @@ function openCasefile(j) {
     h('table', { class: 'cf-tb' }, h('thead', {}, h('tr', {}, ['날짜', '금액', '받는 계좌·은행', '보낸 방법'].map((t) => h('th', {}, t)))),
       h('tbody', {}, [0, 1, 2, 3].map(() => h('tr', {}, [0, 1, 2, 3].map(() => h('td', {})))))),
     h('h2', {}, '5. 함께 낼 자료'),
-    h('ul', { class: 'cf-check' }, ['대화 캡처 원본 (지우지 말고 그대로)', '상대 프로필 화면 캡처', '송금 내역·이체 확인증', '받은 링크와 사이트 화면 캡처', '이 정리본'].map((t) => h('li', {}, t))),
+    h('ul', { class: 'cf-check' }, ['대화 캡처 원본 (지우지 말고 그대로)', '프로필 화면 캡처', '송금 내역·이체 확인증', '받은 링크와 사이트 화면 캡처', '이 정리본'].map((t) => h('li', {}, t))),
     h('h2', {}, '6. 신고·상담처'),
     h('ul', { class: 'cf-to' }, (j.reportTo || []).map((x) => h('li', {}, h('b', {}, x.name), h('span', {}, x.text), x.url ? h('small', {}, x.url) : null))));
   const close = () => { box.remove(); document.body.classList.remove('cf-open'); prev?.focus?.(); };
@@ -1739,6 +1567,7 @@ async function showReport(id) {
   let j = reportCache.get(id);
   let error = null;
   let canRetry = false;
+  let needLogin = false;
   const example = id === EXAMPLE_ID;
   if (!j && example) {
     try {
@@ -1752,27 +1581,23 @@ async function showReport(id) {
       canRetry = true;
     }
   } else if (!j) {
-    const s = storedReport(id);
-    if (!s) {
-      error = '리포트는 서버에 저장하지 않고 점검한 기기에만 24시간 보관합니다. 다른 기기이거나 보관 시간이 지났다면 새로 점검해 주세요.';
-    } else {
-      try {
-        j = await api('/api/report', { body: { token: s.token } });
-        reportCache.set(id, j);
-      } catch (e) {
-        j = null;
-        error = e.message;
-        if (e.status === 404 || e.status === 410) forgetReport(id);
-        else canRetry = true;
-      }
+    try {
+      j = await api('/api/report', { body: { id } });
+      reportCache.set(id, j);
+    } catch (e) {
+      j = null;
+      error = e.message;
+      needLogin = e.login;
+      canRetry = !e.login && e.status !== 404 && e.status !== 410;
     }
   }
   if (!j) {
     view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' },
-      h('h1', {}, '리포트를 열 수 없습니다'),
-      h('p', { class: 'w' }, error),
+      h('h1', {}, needLogin ? '로그인하면 볼 수 있어요' : '리포트를 열 수 없습니다'),
+      h('p', { class: 'w' }, needLogin ? '조회 기록은 조회한 계정에서만 열립니다. 조회할 때 쓴 계정으로 로그인해 주세요.' : error),
+      needLogin ? h('button', { class: 'btn btn-rose', type: 'button', onclick: () => openAuth({ then: () => showReport(id) }) }, '로그인') : null,
       canRetry ? h('button', { class: 'btn btn-navy', type: 'button', style: 'margin-right:8px', onclick: () => showReport(id) }, '다시 시도') : null,
-      h('button', { class: 'btn btn-rose', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, '새로 점검하기'))));
+      needLogin ? null : h('button', { class: 'btn btn-rose', type: 'button', onclick: () => navigate('/my') }, '내 조회 내역'))));
     glueText(view);
     wrapText(view);
     return;
@@ -1781,8 +1606,6 @@ async function showReport(id) {
   REPORT_IS_EXAMPLE = example;
   REPORT_INPUTS = example ? j.exampleInputs : await loadInputs(id);
   REPORT_ITEMS = j.items || [];
-  const canForget = !example && Boolean(storedReport(id) || REPORT_INPUTS);
-  OFFER = j.offers || {};
   const t = j.totals;
   const items = j.items;
   const pending = items.filter((i) => i.status === 'pending' || i.status === 'retry').length;
@@ -1795,12 +1618,13 @@ async function showReport(id) {
   const paintLeft = () => {
     if (example) { left.textContent = '예시 리포트'; return; }
     const ms = j.expiresAt - Date.now();
-    if (ms <= 0) { left.textContent = '보관 시간이 지났습니다'; return; }
-    left.textContent = `자동 삭제까지 ${Math.floor(ms / 3600000)}시간 ${Math.floor((ms % 3600000) / 60000)}분`;
+    if (ms <= 0) { left.textContent = '보관 기간이 지났습니다'; return; }
+    const d = Math.floor(ms / 86400000);
+    left.textContent = d >= 1 ? `자동 삭제까지 ${d}일` : `자동 삭제까지 ${Math.floor(ms / 3600000)}시간 ${Math.floor((ms % 3600000) / 60000)}분`;
   };
   paintLeft();
   clearInterval(countdownTimer);
-  countdownTimer = setInterval(paintLeft, 30000);
+  countdownTimer = setInterval(paintLeft, 60000);
 
   const group = (status) => items.filter((i) => i.checkable && i.status === status);
   const sec = (title, list, desc) => (list.length ? h('section', { class: 'rp-sec' },
@@ -1815,8 +1639,8 @@ async function showReport(id) {
       h('p', { class: 'rp-eyebrow' }, 'DATE CHECK REPORT'),
       h('h1', { class: 'rp-title' }, t.signals ? ['확인 신호 ', h('b', {}, String(t.signals)), '건'] : '확인 신호를 찾지 못했습니다'),
       h('div', { class: 'rp-meta' },
-        h('span', {}, `${when.getFullYear()}.${pad2(when.getMonth() + 1)}.${pad2(when.getDate())} ${pad2(when.getHours())}:${pad2(when.getMinutes())} 점검`),
-        h('span', {}, planLabel(j.plan)),
+        h('span', {}, `${when.getFullYear()}.${pad2(when.getMonth() + 1)}.${pad2(when.getDate())} ${pad2(when.getHours())}:${pad2(when.getMinutes())} 조회`),
+        example ? null : h('span', { class: 'rp-no' }, `조회 번호 ${id}`),
         left),
       h('div', { class: 'rp-stats' },
         h('div', {}, nN, h('span', {}, '검사한 항목, 13개 중')),
@@ -1825,17 +1649,16 @@ async function showReport(id) {
         h('div', {}, nP, h('span', {}, retrying ? '다시 확인할 항목' : '연동 준비 중 항목'))))),
     h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
       example ? h('p', { class: 'notice w rp-example' }, h('b', {}, '예시 리포트입니다.'), ` ${j.exampleNote || '시험용으로 꾸민 자료로 만든 결과입니다.'} 카드 제목 옆 버튼을 누르면 넣은 정보를 볼 수 있습니다.`) : null,
-      h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '분석 결과는 상대방의 신원·안전성을 보증하지 않습니다.'), ' 제공된 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
+      h('div', { class: 'rp-disc' }, h('p', { class: 'w' }, h('b', {}, '조회 결과는 어떤 사람의 신원이나 안전을 보증하지 않습니다.'), ' 입력한 정보 범위에서 사실관계와 확인이 필요한 신호를 보여 드립니다. 신호가 있다면 돈을 보내기 전에 한 번 더 확인하세요.')),
       // .w 안의 span 은 wrap.js 가 다시 짜면서 표시 모양이 벗겨진다 → 따옴표 글자로
       hasAiText(items) ? h('p', { class: 'rp-ai w' }, '‘AI 생성’ 표시가 붙은 설명은 생성형 AI인 구글 제미나이가 작성했습니다. 근거 문장은 입력한 대화에 실제로 있는 문장만 보여 드리며, 캡처의 글자는 AI가 읽은 것이라 원본 캡처와 함께 확인하세요.') : null,
-      unsaved.has(id) ? h('p', { class: 'rp-notes w' }, '이 브라우저에서는 리포트를 저장하지 못했어요(시크릿 모드나 저장 차단 설정일 수 있어요). 이 화면을 닫으면 다시 열 수 없으니, 필요한 내용은 아래 ‘PDF로 저장’으로 지금 남겨 두세요.') : null,
       j.meta?.notes?.length ? h('p', { class: 'rp-notes' }, j.meta.notes.join(' ')) : null,
       timelineSec(j),
       sec('확인 신호가 있는 항목', group('signal'), '사기에서 자주 보이는 흔적입니다. 근거를 직접 읽어 보세요.'),
       sec('참고할 항목', group('note'), '이것만으로 판단할 수는 없지만 알아 두면 좋은 내용입니다.'),
       sec('직접 확인할 항목', group('manual'), '자동으로 조회할 수 있는 공식 자료가 없어 결과를 내지 않은 항목입니다. 각 항목의 버튼으로 경찰민원24·더치트 같은 곳에서 직접 확인해 보세요.'),
       sec('특이사항 없는 항목', group('clear'), '찾지 못했다는 뜻이며, 안전하다는 뜻은 아닙니다.'),
-      sec('잠시 확인하지 못한 항목', group('retry'), '조회 서버가 잠깐 응답하지 않아 확인하지 못했습니다. 각 항목의 버튼으로 공식 사이트에서 바로 확인하거나, 잠시 뒤 새로 점검해 주세요. 무료 점검은 다시 해도 비용이 들지 않습니다.'),
+      sec('잠시 확인하지 못한 항목', group('retry'), '조회 서버가 잠깐 응답하지 않아 확인하지 못했습니다. 각 항목의 버튼으로 공식 사이트에서 바로 확인하거나, 잠시 뒤 새로 조회해 주세요.'),
       sec('연동 준비 중인 항목', group('pending'), '제휴나 공공데이터 키 연동 뒤 자동으로 조회합니다. 지금은 공식 사이트에서 직접 확인할 수 있습니다.'),
       na.length ? h('section', { class: 'rp-sec' }, h('h2', { class: 'rp-sec-t' }, '검사하지 않은 항목', h('small', {}, `${na.length}개`)),
         h('div', { class: 'na-list' }, na.map((i) => h('span', {}, `${pad2(i.no)} ${i.title}`)))) : null,
@@ -1845,11 +1668,11 @@ async function showReport(id) {
           : h('a', { href: o.url, target: '_blank', rel: 'noopener noreferrer', onclick: () => track('official_click') }, h('b', {}, o.label), h('span', { class: 'w' }, o.text)))))),
       h('section', { class: 'rp-sec' }, h('div', { class: 'sent-box' }, h('h3', {}, '이미 돈을 보냈다면'), h('ol', {}, (j.ifSent || []).map((x) => h('li', {}, x))))),
       casefileSec(j),
-      recheckSec(j),
       h('div', { class: 'rp-actions' },
         h('button', { class: 'btn btn-navy', type: 'button', onclick: () => window.print() }, 'PDF로 저장'),
-        h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, example ? '내 경우 점검하기' : '새 점검 시작'),
-        canForget ? h('button', { class: 'btn btn-line', type: 'button', onclick: () => askForget(id) }, '이 기기에서 지우기') : null))),
+        h('button', { class: 'btn btn-line', type: 'button', onclick: () => { navigate('/'); openWizard(); } }, example ? '내 경우 조회하기' : '새로 조회'),
+        example ? null : h('button', { class: 'btn btn-line', type: 'button', onclick: () => navigate('/my') }, '내 조회 내역'),
+        example ? null : h('button', { class: 'btn btn-line', type: 'button', onclick: () => askDelete(id) }, '이 기록 지우기')))),
   );
   glueText(view);
   wrapText(view);
@@ -1866,7 +1689,7 @@ async function showReport(id) {
 // =====================================================================
 function sheet(...content) {
   const s = $('#sheet');
-  const close = () => { s.hidden = true; s.replaceChildren(); document.body.classList.remove('lock'); };
+  const close = () => { s.hidden = true; s.replaceChildren(); if ($('#wizard').hidden) document.body.classList.remove('lock'); };
   s.replaceChildren(h('div', { class: 'sheet-bg', onclick: close }),
     h('div', { class: 'sheet-card', role: 'dialog', 'aria-modal': 'true' }, h('button', { class: 'wz-x sheet-x', type: 'button', 'aria-label': '닫기', onclick: close }, '×'), ...content));
   s.hidden = false;
@@ -1892,7 +1715,7 @@ function openRequest() {
       onclick: async (e) => {
         const btn = e.currentTarget;
         err.textContent = '';
-        if (!msg.value.trim()) { err.textContent = '내용을 적어 주세요. 삭제 요청이라면 리포트 주소나 점검한 날짜를 함께 적어 주세요.'; msg.focus(); return; }
+        if (!msg.value.trim()) { err.textContent = '내용을 적어 주세요. 삭제 요청이라면 조회 번호나 조회한 날짜를 함께 적어 주세요.'; msg.focus(); return; }
         btn.disabled = true;
         try {
           await api('/api/request', { body: { type, message: msg.value, contact: contact.value } });
@@ -1910,36 +1733,356 @@ function openRequest() {
 function openPrivacy() {
   sheet(h('h2', {}, '개인정보 처리 안내'),
     ...[
-      '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 서버에 저장하지 않고 파기합니다. 리포트에서 다시 볼 수 있도록 점검한 기기에만 리포트와 함께 24시간 보관하고 자동으로 지웁니다. 리포트 아래 ‘이 기기에서 지우기’로 바로 지울 수도 있습니다.',
-      '리포트는 서버에 저장하지 않습니다. 서버만 풀 수 있게 암호화해 점검한 기기에만 24시간 보관하고 자동으로 지웁니다.',
-      'AI 분석을 위해 대화와 사진을 구글 제미나이 API로 보냅니다. 사진 도용 확인을 위해 사진을 구글 Cloud Vision 웹 검색으로 보냅니다. 정식 출시 때 처리방침에 위탁과 국외 이전으로 안내합니다.',
+      '가입할 때 이메일 주소와 로그인 방법(이메일·구글·카카오)을 받습니다. 비밀번호는 Supabase 로그인 서버에 암호화해 보관하며 저희도 볼 수 없습니다.',
+      '입력한 전화번호, 계좌번호, 사진, 대화 원본은 분석이 끝나면 서버에서 지웁니다. 리포트에서 다시 볼 수 있도록 조회한 기기에만 24시간 두고 자동으로 지웁니다.',
+      '조회 결과는 서버만 풀 수 있게 암호화해 내 계정에 30일 보관하고 자동으로 지웁니다. ‘내 조회’에서 언제든 바로 지울 수 있고, 회원 탈퇴하면 모두 지워집니다.',
+      'AI 분석을 위해 대화와 사진을 구글 제미나이 API로, 사진 도용 확인을 위해 사진을 구글 Cloud Vision 웹 검색으로 보냅니다(국외 이전). 회원 정보와 조회 기록은 서울에 있는 서버(Supabase·Vercel)에 둡니다.',
       '대화·사진 분석에는 생성형 AI를 씁니다. AI가 작성한 설명에는 리포트에서 ‘AI 생성’ 표시를 붙입니다.',
-      '분석 서버는 서울 지역에서 돌아갑니다. 이름과 SNS 계정은 사람을 찾는 데 쓰일 수 있어 입력받지 않습니다.',
-      '사업자등록번호·회사 이름·병원 이름은 국세청·공정거래위원회·금융위원회·건강보험심사평가원의 공개 조회 서비스(공공데이터포털)로 확인합니다. 조회한 내용은 저장하지 않습니다.',
-      '공개 글 검색은 저희가 대신 하지 않습니다. 네이버 버튼을 누르면 이용자 브라우저에서 네이버 검색 결과가 열립니다.',
-      '성범죄자 공개정보와 범죄경력 정보는 저장하지 않습니다.',
-      '관리자 화면에서도 원본 개인정보는 볼 수 없고, 관리자 접속은 기록으로 남습니다.',
-    ].map((t) => h('p', { class: 'w' }, t)));
+      '이름과 SNS 계정은 사람을 찾는 데 쓰일 수 있어 입력받지 않습니다. 사업자·회사·병원은 공공데이터포털의 공개 조회 서비스로 확인하고, 조회한 내용은 따로 저장하지 않습니다.',
+    ].map((t) => h('p', { class: 'w' }, t)),
+    h('p', { class: 'w' }, '자세한 내용은 ', h('a', { href: '/privacy' }, '개인정보 처리방침'), '과 ', h('a', { href: '/terms' }, '이용약관'), '에 있습니다.'));
+}
+
+// =====================================================================
+// 로그인·회원가입·약관 동의 (2026-10-27 오너: 로그인해야 모든 기능, 첫 화면은 누구나)
+// 토큰은 서버가 httpOnly 쿠키로만 다룬다 — 이 화면은 /api/me 로 로그인했는지만 안다
+// =====================================================================
+const ME = { loaded: false, user: null, consent: false, usage: null };
+async function loadMe() {
+  try {
+    const j = await api('/api/me', { timeout: 10000 });
+    ME.user = j.user || null;
+    ME.consent = Boolean(j.consent);
+    ME.usage = j.usage || null;
+    ME.loaded = true;
+  } catch {
+    // 서버가 잠깐 안 되면 로그인 안 된 것처럼 두고, 다음 동작에서 다시 묻는다
+    ME.loaded = false;
+  }
+  paintAuth();
+  return ME;
+}
+function paintAuth() {
+  const on = Boolean(ME.user);
+  $$('[data-open-auth]').forEach((el) => { el.hidden = on; });
+  $$('[data-auth-my]').forEach((el) => { el.hidden = !on; });
+}
+
+const PROVIDER_LABEL = { email: '이메일', google: '구글', kakao: '카카오' };
+const SSO = {
+  google: { label: 'Google로 계속하기', icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.5 5.5 0 0 1-2.4 3.62v3h3.88c2.27-2.1 3.57-5.18 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.92l-3.88-3c-1.08.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.1-6.71-4.94H1.28v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.29 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.28a12 12 0 0 0 0 10.78z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.44-3.44A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.28 6.61l4.01 3.1C6.23 6.87 8.88 4.77 12 4.77z"/></svg>' },
+  kakao: { label: '카카오로 계속하기', icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#191919" d="M12 3C6.48 3 2 6.5 2 10.82c0 2.8 1.87 5.25 4.68 6.63l-.95 3.48c-.08.3.26.55.53.37l4.15-2.75c.52.06 1.05.1 1.59.1 5.52 0 10-3.5 10-7.83S17.52 3 12 3z"/></svg>' },
+};
+const authNext = (next) => encodeURIComponent(next || `${location.pathname}${location.search}`);
+let authThen = null;
+
+// 동의 세 칸(모두 필수) — 가입할 때와 소셜 로그인으로 처음 들어올 때 같은 칸
+function agreeBoxes() {
+  const items = [
+    ['age', '만 14세 이상입니다', null],
+    ['terms', '이용약관 동의', '/terms'],
+    ['privacy', '개인정보 수집·이용 동의', '/privacy'],
+  ];
+  const state = { age: false, terms: false, privacy: false };
+  const boxes = items.map(([k, label, href]) => {
+    const cb = h('input', { type: 'checkbox', onchange: (e) => { state[k] = e.target.checked; all.checked = Object.values(state).every(Boolean); } });
+    return [k, cb, h('div', { class: 'agree-row' }, h('label', { class: 'consent' }, cb, h('span', {}, h('em', {}, '필수'), ' ', label)),
+      href ? h('a', { href, target: '_blank', rel: 'noopener', class: 'agree-see' }, '보기') : null)];
+  });
+  const all = h('input', { type: 'checkbox', onchange: (e) => { for (const [k, cb] of boxes) { cb.checked = e.target.checked; state[k] = e.target.checked; } } });
+  const el = h('div', { class: 'agree' },
+    h('label', { class: 'consent agree-all' }, all, h('span', {}, '모두 동의합니다')),
+    boxes.map((b) => b[2]));
+  return { el, state, ok: () => Object.values(state).every(Boolean) };
+}
+
+function openAuth({ then = null, why = '', mode = 'login', next = '' } = {}) {
+  track('auth_open');
+  authThen = then;
+  const nextPath = next || (then === openWizard ? '/?start=1' : '');
+  const sso = ['google', 'kakao'].filter((p) => CONFIG.auth?.[p]);
+  const err = h('p', { class: 'err-msg', role: 'alert' });
+  const email = h('input', { class: 'inp', id: 'au-email', type: 'email', autocomplete: 'email', inputmode: 'email', placeholder: 'name@example.com', required: true });
+  const pw = h('input', { class: 'inp', id: 'au-pw', type: 'password', autocomplete: mode === 'signup' ? 'new-password' : 'current-password', placeholder: mode === 'signup' ? '영문과 숫자를 섞어 8자 이상' : '비밀번호', required: true, minlength: mode === 'signup' ? '8' : null });
+  const agree = mode === 'signup' ? agreeBoxes() : null;
+  const submit = h('button', { class: 'btn btn-rose', type: 'submit', style: 'width:100%' }, mode === 'signup' ? '가입하기' : '로그인');
+  const form = h('form', { class: 'au-form', novalidate: true },
+    field('이메일', email),
+    field('비밀번호', pw, mode === 'signup' ? h('p', { class: 'fld-help' }, '영문과 숫자를 섞어 8자 이상으로 정해 주세요.') : null),
+    agree ? agree.el : null,
+    err, submit);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    if (!email.value.trim()) { err.textContent = '이메일을 넣어 주세요.'; email.focus(); return; }
+    if (!pw.value) { err.textContent = '비밀번호를 넣어 주세요.'; pw.focus(); return; }
+    if (agree && !agree.ok()) { err.textContent = '필수 항목 세 가지에 모두 동의해 주세요.'; return; }
+    submit.disabled = true;
+    try {
+      const j = await api(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', { body: { email: email.value.trim(), password: pw.value, agree: agree?.state, visitor } });
+      if (j.confirm) {
+        close();
+        sheet(h('h2', {}, '메일함을 확인해 주세요'), h('p', { class: 'w' }, `${email.value.trim()} 주소로 확인 메일을 보냈어요. 메일의 ‘이메일 확인하기’를 누르면 가입이 끝나고 로그인됩니다.`));
+        return;
+      }
+    } catch (x) {
+      err.textContent = x.message;
+      submit.disabled = false;
+      return;
+    }
+    close();
+    await afterLogin(mode === 'signup' ? '가입했어요. 바로 조회할 수 있어요.' : '로그인했어요.');
+  });
+  const switchTo = mode === 'signup'
+    ? h('p', { class: 'au-alt' }, '이미 가입했나요? ', h('button', { type: 'button', class: 'link-btn', onclick: () => openAuth({ then, why, mode: 'login', next }) }, '로그인'))
+    : h('p', { class: 'au-alt' }, '처음이신가요? ', h('button', { type: 'button', class: 'link-btn', onclick: () => openAuth({ then, why, mode: 'signup', next }) }, '회원가입'),
+      h('span', { class: 'au-dot', 'aria-hidden': 'true' }, '·'), h('button', { type: 'button', class: 'link-btn', onclick: () => openRecover(email.value.trim()) }, '비밀번호 찾기'));
+  const close = sheet(
+    h('h2', {}, mode === 'signup' ? '회원가입' : '로그인'),
+    h('p', { class: 'w' }, why || (mode === 'signup' ? '가입하면 13개 항목을 모두 조회하고, 조회 내역을 내 계정에서 다시 볼 수 있어요.' : '로그인하면 조회하고, 지난 조회 내역을 다시 볼 수 있어요.')),
+    sso.length ? h('div', { class: 'sso' }, sso.map((p) => {
+      const a = h('a', { class: `sso-b sso-${p}`, href: `/api/auth/oauth?provider=${p}&next=${authNext(nextPath)}` }, h('span', { class: 'sso-ic' }), SSO[p].label);
+      a.firstChild.innerHTML = SSO[p].icon;
+      return a;
+    }), mode === 'signup' ? h('p', { class: 'fld-help' }, '구글·카카오로 처음 들어오면 약관 동의 화면이 이어집니다.') : null) : null,
+    sso.length ? h('p', { class: 'or' }, h('span', {}, '또는 이메일로')) : null,
+    form, switchTo);
+  setTimeout(() => email.focus(), 80);
+}
+
+// 로그인을 마친 뒤 — 약관 동의가 없으면 동의부터, 있으면 하던 일을 잇는다
+async function afterLogin(msg) {
+  await loadMe();
+  const then = authThen;
+  authThen = null;
+  if (ME.user && !ME.consent) { openConsent({ then }); return; }
+  if (msg) toast(msg);
+  if (location.pathname === '/my') showMy();
+  then?.();
+}
+
+function openConsent({ then = null } = {}) {
+  const agree = agreeBoxes();
+  const err = h('p', { class: 'err-msg', role: 'alert' });
+  const btn = h('button', {
+    class: 'btn btn-rose', type: 'button', style: 'width:100%',
+    onclick: async () => {
+      err.textContent = '';
+      if (!agree.ok()) { err.textContent = '필수 항목 세 가지에 모두 동의해 주세요.'; return; }
+      btn.disabled = true;
+      try {
+        await api('/api/consent', { body: { agree: agree.state } });
+      } catch (x) {
+        err.textContent = x.message;
+        btn.disabled = false;
+        return;
+      }
+      ME.consent = true;
+      close();
+      toast('동의했어요. 바로 조회할 수 있어요.');
+      then?.();
+    },
+  }, '동의하고 시작하기');
+  const close = sheet(h('h2', {}, '약관에 동의해 주세요'),
+    h('p', { class: 'w' }, 'DATE CHECK를 쓰려면 아래 세 가지에 동의해야 합니다. 동의하지 않으면 로그아웃할 수 있어요.'),
+    agree.el, err, btn,
+    h('p', { class: 'au-alt' }, h('button', { type: 'button', class: 'link-btn', onclick: () => { close(); logout(); } }, '동의하지 않고 로그아웃')));
+}
+
+function openRecover(prefill = '') {
+  const email = h('input', { class: 'inp', id: 'rc-email', type: 'email', autocomplete: 'email', inputmode: 'email', placeholder: 'name@example.com' });
+  email.value = prefill;
+  const err = h('p', { class: 'err-msg', role: 'alert' });
+  const btn = h('button', {
+    class: 'btn btn-rose', type: 'button', style: 'width:100%',
+    onclick: async () => {
+      err.textContent = '';
+      if (!email.value.trim()) { err.textContent = '가입한 이메일을 넣어 주세요.'; email.focus(); return; }
+      btn.disabled = true;
+      try {
+        await api('/api/auth/recover', { body: { email: email.value.trim() } });
+      } catch (x) {
+        err.textContent = x.message;
+        btn.disabled = false;
+        return;
+      }
+      close();
+      sheet(h('h2', {}, '메일을 보냈어요'), h('p', { class: 'w' }, '가입한 주소라면 비밀번호를 다시 정하는 메일이 갑니다. 몇 분 안에 오지 않으면 스팸함도 확인해 주세요.'));
+    },
+  }, '재설정 메일 받기');
+  const close = sheet(h('h2', {}, '비밀번호 찾기'), h('p', { class: 'w' }, '가입한 이메일로 비밀번호를 다시 정하는 링크를 보내 드립니다.'), field('이메일', email), err, btn);
+}
+
+function openNewPassword() {
+  const pw = h('input', { class: 'inp', id: 'np-pw', type: 'password', autocomplete: 'new-password', placeholder: '영문과 숫자를 섞어 8자 이상' });
+  const pw2 = h('input', { class: 'inp', id: 'np-pw2', type: 'password', autocomplete: 'new-password', placeholder: '한 번 더' });
+  const err = h('p', { class: 'err-msg', role: 'alert' });
+  const btn = h('button', {
+    class: 'btn btn-rose', type: 'button', style: 'width:100%',
+    onclick: async () => {
+      err.textContent = '';
+      if (pw.value !== pw2.value) { err.textContent = '두 칸의 비밀번호가 달라요. 다시 확인해 주세요.'; pw2.focus(); return; }
+      btn.disabled = true;
+      try {
+        await api('/api/auth/password', { body: { password: pw.value } });
+      } catch (x) {
+        err.textContent = x.message;
+        btn.disabled = false;
+        if (x.login) { close(); openAuth(); }
+        return;
+      }
+      close();
+      toast('비밀번호를 바꿨어요');
+    },
+  }, '비밀번호 바꾸기');
+  const close = sheet(h('h2', {}, '새 비밀번호'), field('새 비밀번호', pw), field('새 비밀번호 확인', pw2), err, btn);
+}
+
+async function logout() {
+  try { await api('/api/auth/logout', { body: {} }); } catch { /* 쿠키는 서버가 지운다. 실패해도 화면은 로그아웃으로 */ }
+  ME.user = null;
+  ME.consent = false;
+  ME.usage = null;
+  reportCache.clear();
+  paintAuth();
+  toast('로그아웃했어요');
+  if (location.pathname === '/my' || location.pathname.startsWith('/report/')) navigate('/');
+}
+
+function openDeleteAccount() {
+  let ok = false;
+  const err = h('p', { class: 'err-msg', role: 'alert' });
+  const btn = h('button', {
+    class: 'btn btn-rose', type: 'button',
+    onclick: async () => {
+      err.textContent = '';
+      if (!ok) { err.textContent = '안내를 확인하고 체크해 주세요.'; return; }
+      btn.disabled = true;
+      try {
+        await api('/api/me/delete', { body: { confirm: true } });
+      } catch (x) {
+        err.textContent = x.message;
+        btn.disabled = false;
+        return;
+      }
+      ME.user = null;
+      ME.consent = false;
+      reportCache.clear();
+      paintAuth();
+      close();
+      toast('탈퇴했어요. 계정과 조회 기록을 모두 지웠습니다.');
+      navigate('/');
+    },
+  }, '탈퇴하기');
+  const close = sheet(h('h2', {}, '회원 탈퇴'),
+    h('p', { class: 'w' }, '탈퇴하면 계정과 내 계정에 남은 조회 기록이 바로 모두 지워지고 되살릴 수 없습니다. 필요한 리포트는 먼저 ‘PDF로 저장’으로 남겨 두세요.'),
+    h('label', { class: 'consent' }, h('input', { type: 'checkbox', onchange: (e) => { ok = e.target.checked; } }), h('span', {}, '위 내용을 확인했습니다.')),
+    err,
+    h('div', { class: 'sheet-btns' }, h('button', { class: 'btn btn-line', type: 'button', onclick: () => close() }, '취소'), btn));
+}
+
+// =====================================================================
+// 내 조회 (/my) — 조회 내역·계정. 공공기관 조회 내역 화면처럼 일시·조회 번호·항목·결과를 한 줄씩
+// =====================================================================
+const GROUP_OF = { phone: '전화번호', account: '계좌번호', money: '대화', invest: '대화', privacy: '대화', avoid: '대화', mismatch: '대화', photo: '사진', link: '링크', biz: '사업자', commerce: '사업자', company: '회사·직업', job: '회사·직업' };
+const ymdhm = (t) => { const d = new Date(t); return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const daysLeft = (t) => Math.max(0, Math.ceil((t - Date.now()) / 86400000));
+
+async function showMy() {
+  const view = $('#report-view');
+  view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' }, h('p', {}, '내 조회 내역을 여는 중입니다'))));
+  scrollTo({ top: 0 });
+  if (!ME.loaded) await loadMe();
+  const emptyView = (title, text, ...btns) => {
+    view.replaceChildren(h('div', { class: 'rp-empty' }, h('div', { class: 'wrap' }, h('h1', {}, title), h('p', { class: 'w' }, text), ...btns)));
+    glueText(view);
+    wrapText(view);
+  };
+  if (!ME.user) {
+    emptyView('로그인하면 볼 수 있어요', '조회 내역은 내 계정에만 남습니다. 로그인하면 지난 조회를 다시 열어 볼 수 있어요.',
+      h('button', { class: 'btn btn-rose', type: 'button', onclick: () => openAuth({ then: showMy, next: '/my' }) }, '로그인'));
+    return;
+  }
+  let list;
+  try {
+    list = (await api('/api/reports')).reports || [];
+  } catch (e) {
+    if (e.login) { ME.user = null; paintAuth(); showMy(); return; }
+    emptyView('내 조회 내역을 열 수 없어요', e.message, h('button', { class: 'btn btn-navy', type: 'button', onclick: showMy }, '다시 시도'));
+    return;
+  }
+  const u = ME.user;
+  const usage = ME.usage;
+  const rows = list.map((r) => {
+    const groups = [...new Set((r.checked || []).map((id) => GROUP_OF[id]).filter(Boolean))];
+    const result = r.signals ? h('span', { class: 'chip-st st-signal' }, `확인 신호 ${r.signals}건`) : r.notes ? h('span', { class: 'chip-st st-note' }, `참고 ${r.notes}건`) : h('span', { class: 'chip-st st-clear' }, '확인 신호 없음');
+    return h('li', { class: 'my-row' },
+      h('div', { class: 'my-when' }, h('b', {}, ymdhm(r.createdAt)), h('span', { class: 'my-no' }, `조회 번호 ${r.id}`)),
+      h('div', { class: 'my-what' }, groups.map((g) => h('span', {}, g))),
+      h('div', { class: 'my-res' }, result, h('small', {}, `${daysLeft(r.expiresAt)}일 뒤 자동 삭제`)),
+      h('div', { class: 'my-act' },
+        h('button', { class: 'btn btn-navy btn-sm', type: 'button', onclick: () => navigate(`/report/${r.id}`) }, '보기'),
+        h('button', { class: 'btn btn-line btn-sm', type: 'button', onclick: () => askDelete(r.id, showMy) }, '지우기')));
+  });
+  view.replaceChildren(
+    h('div', { class: 'rp-head my-head' }, h('div', { class: 'wrap' },
+      h('p', { class: 'rp-eyebrow' }, 'MY DATE CHECK'),
+      h('h1', { class: 'rp-title' }, '내 조회 내역'),
+      h('div', { class: 'rp-meta' }, h('span', {}, u.email || '이메일 없음'), h('span', {}, `${PROVIDER_LABEL[u.provider] || u.provider} 로그인`)),
+      h('div', { class: 'rp-stats my-stats' },
+        h('div', {}, h('b', {}, String(list.length)), h('span', {}, '보관 중인 조회')),
+        h('div', {}, h('b', {}, Number.isFinite(usage?.today) ? `${usage.today}/${usage.perDay}` : '-'), h('span', {}, '최근 24시간 조회')),
+        h('div', {}, h('b', {}, `${CONFIG.retentionDays || 30}일`), h('span', {}, '조회 기록 보관'))))),
+    h('div', { class: 'rp-body' }, h('div', { class: 'wrap' },
+      h('section', { class: 'rp-sec' },
+        h('h2', { class: 'rp-sec-t' }, '조회 내역', h('small', {}, `${list.length}건`),
+          h('button', { class: 'btn btn-rose btn-sm my-new', type: 'button', onclick: () => openWizard() }, '새로 조회')),
+        h('p', { class: 'w sec-desc' }, `조회 결과는 서버만 풀 수 있게 암호화해 ${CONFIG.retentionDays || 30}일 보관하고 자동으로 지웁니다. 넣은 사진과 대화 원본은 서버에 남기지 않습니다.`),
+        rows.length ? h('ol', { class: 'my-list' }, rows)
+          : h('div', { class: 'my-empty' }, h('p', { class: 'w' }, '아직 조회 내역이 없어요. 받은 연락이나 내 정보를 조회해 보세요.'), h('button', { class: 'btn btn-rose', type: 'button', onclick: () => openWizard() }, '조회 시작'))),
+      h('section', { class: 'rp-sec' },
+        h('h2', { class: 'rp-sec-t' }, '계정'),
+        h('dl', { class: 'my-acc' },
+          h('dt', {}, '이메일'), h('dd', {}, u.email || '-'),
+          h('dt', {}, '로그인 방법'), h('dd', {}, PROVIDER_LABEL[u.provider] || u.provider),
+          h('dt', {}, '가입일'), h('dd', {}, u.createdAt ? ymdhm(u.createdAt).slice(0, 10) : '-')),
+        h('div', { class: 'my-acc-btns' },
+          u.provider === 'email' ? h('button', { class: 'btn btn-line btn-sm', type: 'button', onclick: openNewPassword }, '비밀번호 바꾸기') : null,
+          h('button', { class: 'btn btn-line btn-sm', type: 'button', onclick: logout }, '로그아웃'),
+          h('button', { class: 'link-btn my-leave', type: 'button', onclick: openDeleteAccount }, '회원 탈퇴'))))),
+  );
+  glueText(view);
+  wrapText(view);
 }
 
 // =====================================================================
 async function boot() {
-  purgeReports();
   purgeInputs();
   // 설정 없이도 첫 화면은 뜬다 — 못 받았으면 3초·10초 뒤 다시 받아 검사 항목 칸을 채운다
-  if (!(await loadConfig())) {
+  const cfg = loadConfig();
+  const me = loadMe();
+  if (!(await cfg)) {
     for (const wait of [3000, 10000]) {
       setTimeout(async () => { if (!CONFIG.checks.length && (await loadConfig())) { renderCheckGrid(); glueText(); wrapText(); } }, wait);
     }
   }
   initLanding();
   renderCheckGrid();
+  await me;
   route();
   glueText();
   wrapText();
-  // 가이드 페이지의 '검증 시작' 단추로 들어오면 팝업을 바로 연다
-  if (new URLSearchParams(location.search).get('start') === '1') {
-    history.replaceState({}, '', '/');
+  // 로그인·메일 링크에서 돌아왔을 때 — 안내를 띄우고 주소의 물음표 뒤를 지운다
+  const q = new URLSearchParams(location.search);
+  const clean = () => history.replaceState({}, '', location.pathname);
+  if (q.has('login')) { clean(); await afterLogin('로그인했어요.'); }
+  else if (q.has('confirmed')) { clean(); await afterLogin('이메일을 확인했어요. 바로 조회할 수 있어요.'); }
+  else if (q.has('login_error')) { clean(); toast(q.get('login_error') === 'cancel' ? '로그인을 취소했어요.' : '로그인하지 못했어요. 처음부터 다시 시도해 주세요.'); }
+  else if (q.has('link_error')) { clean(); toast('링크가 만료됐거나 이미 쓴 링크예요. 다시 요청해 주세요.'); }
+  else if (q.has('reset')) { clean(); if (ME.user) openNewPassword(); }
+  // 가이드 페이지의 '조회 시작' 단추·로그인 뒤 이어서 — 팝업을 바로 연다
+  if (q.get('start') === '1') {
+    if (!q.has('login')) history.replaceState({}, '', '/');
     openWizard();
   }
 }

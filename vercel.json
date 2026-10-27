@@ -20,6 +20,10 @@
     {
       "source": "/report/:id",
       "destination": "/"
+    },
+    {
+      "source": "/my",
+      "destination": "/"
     }
   ],
   "headers": [
