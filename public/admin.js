@@ -32,6 +32,49 @@ const time = (t) => { const d = new Date(t); return `${d.getMonth() + 1}.${d.get
 const API_NAME = { naver: '네이버 검색 (예전 기록, 지금은 쓰지 않음)', vision: '구글 Vision 사진 웹 검색', whois: 'KISA WHOIS · RDAP', gemini: '제미나이 AI 분석', nts: '국세청 사업자 상태', ftc_mail: '공정위 통신판매사업자', ftc_door: '공정위 방문판매사업자', fsc_corp: '금융위 기업기본정보', ftc_sponsor: '공정위 후원방문판매사업자', ftc_mlm: '공정위 다단계판매사업자', hira: '심평원 병원정보', thecheat: '더치트' };
 const TYPE = { delete: '삭제 요청', inquiry: '문의', report: '신고' };
 const PROVIDER = { email: '이메일', google: '구글', kakao: '카카오' };
+const day = (iso) => { if (!iso) return '—'; const d = new Date(iso); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; };
+
+// 표 → CSV(엑셀 한글 BOM). = + - @ 로 시작하는 칸은 엑셀 수식으로 읽히지 않게 앞에 ' (2026-10-28)
+function downloadCsv(name, head, rows) {
+  const cell = (v) => {
+    let s = v == null ? '' : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const text = [head, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
+  const stamp = day(new Date().toISOString()).replace(/\./g, '-');
+  const a = h('a', { href: URL.createObjectURL(new Blob([String.fromCharCode(0xfeff), text], { type: 'text/csv;charset=utf-8' })), download: `${name}-${stamp}.csv` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+}
+
+// 회원 목록 — 이메일로 찾기 · CSV (최근 가입 500명, 데이터베이스 admin_members)
+function memberCard(list) {
+  if (!list) return null;
+  const body = h('tbody', {});
+  const draw = (q) => {
+    const k = q.trim().toLowerCase();
+    const rows = k ? list.filter((u) => String(u.email || '').toLowerCase().includes(k)) : list;
+    body.replaceChildren(...(rows.length ? rows.map((u) => h('tr', {},
+      h('td', {}, u.email || '—', u.confirmed ? null : h('small', { style: 'margin-left:6px;color:var(--rose)' }, '메일 미확인')),
+      h('td', {}, PROVIDER[u.provider] || u.provider),
+      h('td', { class: 'num' }, num(u.checks)),
+      h('td', { class: 'num' }, num(u.stored)),
+      h('td', { class: 'num' }, day(u.created_at)),
+      h('td', { class: 'num' }, day(u.last_sign_in_at))))
+      : [h('tr', {}, h('td', { colspan: 6, class: 'empty' }, list.length ? '찾는 회원이 없습니다.' : '아직 회원이 없습니다.'))]));
+    return rows;
+  };
+  let shown = draw('');
+  const search = h('input', { class: 'inp', type: 'search', placeholder: '이메일로 찾기', 'aria-label': '이메일로 찾기', style: 'max-width:260px', oninput: (e) => { shown = draw(e.target.value); } });
+  const csv = h('button', { class: 'btn btn-line btn-sm', type: 'button', onclick: () => downloadCsv('datecheck-회원', ['이메일', '가입 방식', '메일 확인', '조회 수', '보관 중 기록', '가입일', '마지막 로그인'], shown.map((u) => [u.email, PROVIDER[u.provider] || u.provider, u.confirmed ? '예' : '아니오', u.checks, u.stored, day(u.created_at), day(u.last_sign_in_at)])) }, 'CSV 내려받기');
+  return h('div', { class: 'card' }, h('h2', {}, `회원 목록 ${num(list.length)}명`), h('p', { class: 'desc' }, '최근 가입 500명 · 조회 수는 최근 90일'),
+    h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:4px 0 12px' }, search, csv),
+    h('div', { class: 'scroll-x', style: 'max-height:460px;overflow:auto' }, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, '이메일'), h('th', {}, '가입 방식'), h('th', { class: 'num' }, '조회'), h('th', { class: 'num' }, '보관 중'), h('th', { class: 'num' }, '가입일'), h('th', { class: 'num' }, '마지막 로그인'))),
+      body)));
+}
 
 function login(msg) {
   const inp = h('input', { class: 'inp', type: 'password', placeholder: '관리자 키', autocomplete: 'current-password' });
@@ -113,6 +156,7 @@ function render(s, key) {
     h('main', { class: 'ad-main' }, h('div', { class: 'wrap' },
       h('p', { class: 'ad-note w' }, '사진과 대화 같은 원본 개인정보는 저장하지 않고, 조회 결과는 암호화돼 있어 관리자도 볼 수 없습니다. 이 화면을 열면 관리자 접근 로그에 남습니다. 원가는 단가 추정치입니다.'),
       m ? null : h('p', { class: 'ad-note ad-warn w' }, '데이터베이스(Supabase)에 연결하지 못해 회원 숫자를 보여 드리지 못했습니다. 아래 숫자는 함수마다 따로 세는 임시 집계입니다.'),
+      m && s.storage !== 'database' ? h('p', { class: 'ad-note ad-warn w' }, '방문·퍼널·API 원가 숫자는 이 서버가 켜진 뒤 센 임시 집계입니다(데이터베이스 집계를 읽지 못함).') : null,
       h('div', { class: 'ad-grid' },
         h('div', { class: 'kpi' }, h('span', {}, '전체 회원'), h('b', {}, m ? num(m.users) : '—'), h('em', {}, providers)),
         h('div', { class: 'kpi' }, h('span', {}, '오늘 가입'), h('b', {}, num(todayRow.signups)), h('em', {}, '한국 시간 기준')),
@@ -132,7 +176,7 @@ function render(s, key) {
           metric('조회 1건당 API·AI 원가', won(k.costPerCheck)),
           metric('재사용률', pct(k.reuseRate), '두 번 이상 조회한 방문자'))),
       h('div', { class: 'two row-gap' },
-        h('div', { class: 'card' }, h('h2', {}, 'API별 호출량·실패율·원가'), h('p', { class: 'desc' }, '서버 켠 뒤 누적'),
+        h('div', { class: 'card' }, h('h2', {}, 'API별 호출량·실패율·원가'), h('p', { class: 'desc' }, s.storage === 'database' ? '최근 30일' : '서버 켠 뒤 누적'),
           h('div', { class: 'scroll-x' }, h('table', {},
             h('thead', {}, h('tr', {}, h('th', {}, 'API'), h('th', { class: 'num' }, '호출'), h('th', { class: 'num' }, '실패율'), h('th', { class: 'num' }, '평균 응답'), h('th', { class: 'num' }, '원가'))),
             h('tbody', {}, s.api.length ? s.api.map((a) => h('tr', {}, h('td', {}, API_NAME[a.name] || a.name), h('td', { class: 'num' }, num(a.calls)), h('td', { class: 'num' }, pct(a.failRate)), h('td', { class: 'num' }, `${(a.avgMs / 1000).toFixed(1)}초`), h('td', { class: 'num' }, a.krw ? won(a.krw) : '무료'))) : h('tr', {}, h('td', { colspan: 5, class: 'empty' }, '아직 호출이 없습니다.')),
@@ -141,8 +185,9 @@ function render(s, key) {
           h('div', { class: 'purge' },
             metric('파기한 원본', `${num(s.purge.originals)}건`, '입력 항목 기준'),
             metric('보관 중인 조회 기록', m ? `${num(m.reportsStored)}건` : '—', '암호화해 30일'),
-            metric('마지막 파기', s.purge.lastAt ? time(s.purge.lastAt) : '—', '분석 직후 원본 파기'),
+            metric('마지막 파기', s.purge.lastAt ? (s.purge.lastIsDay ? day(s.purge.lastAt) : time(s.purge.lastAt)) : '—', '분석 직후 원본 파기'),
             metric('회원·문의 저장', m ? '데이터베이스' : '임시', m ? 'Supabase 서울' : '함수 재시작 때 사라짐')))),
+      memberCard(s.memberList),
       h('div', { class: 'card' }, h('h2', {}, '삭제요청·문의·신고'), h('p', { class: 'desc' }, '최근 100건'),
         h('div', { class: 'scroll-x' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, '접수'), h('th', {}, '종류'), h('th', {}, '내용'), h('th', {}, '연락처'), h('th', {}, '처리'))), h('tbody', {}, reqRows)))),
       h('div', { class: 'card' }, h('h2', {}, '관리자 접근로그'), h('p', { class: 'desc' }, '최근 60건'),

@@ -100,3 +100,89 @@ create extension if not exists pg_cron;
 select cron.unschedule('datecheck-purge') where exists (select 1 from cron.job where jobname = 'datecheck-purge');
 select cron.schedule('datecheck-purge', '17 * * * *',
   $$delete from public.reports where expires_at < now(); delete from public.usage_hits where at < now() - interval '90 days'$$);
+
+-- 관리자 집계를 데이터베이스에 (2026-10-28) — Vercel 은 함수가 다시 뜨면 임시 폴더(/tmp) 집계가 사라져
+-- 라이브 관리자 화면의 방문·퍼널·API 원가가 늘 0 이었다. 개인정보 없는 하루 합계만 남긴다.
+--   key = 'ev:<화면 이벤트>' · 'api:<API>'(호출 수·원가·응답 시간) · 'fail:<API>'(실패 수) · 'purge:originals'(파기한 원본 수)
+create table if not exists public.metrics_daily (
+  day date not null,
+  key text not null,
+  n bigint not null default 0,
+  krw numeric not null default 0,
+  ms bigint not null default 0,
+  primary key (day, key)
+);
+alter table public.metrics_daily enable row level security;
+revoke all on public.metrics_daily from anon, authenticated;
+
+-- 한 요청에서 생긴 집계를 한 번에 더한다(한국 시간 날짜). p_items = [{"k":"ev:landing_view","n":1,"krw":0,"ms":0}, …]
+create or replace function public.bump_metrics(p_items jsonb)
+returns void
+language sql security definer set search_path = public as $$
+  insert into public.metrics_daily as m (day, key, n, krw, ms)
+  select (now() at time zone 'Asia/Seoul')::date, left(x->>'k', 80), sum(coalesce((x->>'n')::bigint, 1)), sum(coalesce((x->>'krw')::numeric, 0)), sum(coalesce((x->>'ms')::bigint, 0))
+  from jsonb_array_elements(p_items) x
+  where x->>'k' ~ '^(ev|api|fail|purge):[a-z0-9_-]{1,60}$'
+  group by 2
+  on conflict (day, key) do update set n = m.n + excluded.n, krw = m.krw + excluded.krw, ms = m.ms + excluded.ms
+$$;
+revoke execute on function public.bump_metrics(jsonb) from public, anon, authenticated;
+grant execute on function public.bump_metrics(jsonb) to service_role;
+
+-- 관리자 접근 로그 — 누가(접속 주소) 언제 무엇을 했나
+create table if not exists public.admin_log (
+  id bigint generated always as identity primary key,
+  at timestamptz not null default now(),
+  action text not null,
+  ip text not null default ''
+);
+create index if not exists admin_log_at on public.admin_log (at desc);
+alter table public.admin_log enable row level security;
+revoke all on public.admin_log from anon, authenticated;
+
+-- 관리자 화면 집계 — 최근 30일 하루 합계 · 30일 안에 조회한 회원 수(두 번 이상 포함) · 파기 누계 · 접근 로그 60건
+create or replace function public.admin_metrics()
+returns jsonb
+language sql security definer set search_path = public as $$
+  select jsonb_build_object(
+    'rows', (select coalesce(jsonb_agg(jsonb_build_object('day', to_char(day, 'YYYY-MM-DD'), 'key', key, 'n', n, 'krw', krw, 'ms', ms)), '[]'::jsonb)
+      from public.metrics_daily where day >= (now() at time zone 'Asia/Seoul')::date - 29),
+    'users30', (select count(distinct user_id) from public.usage_hits where bucket = 'analyze' and at > now() - interval '30 days'),
+    'repeat30', (select count(*) from (select user_id from public.usage_hits where bucket = 'analyze' and at > now() - interval '30 days' group by user_id having count(*) >= 2) r),
+    'purgeOriginals', (select coalesce(sum(n), 0) from public.metrics_daily where key = 'purge:originals'),
+    'purgeLastDay', (select to_char(max(day), 'YYYY-MM-DD') from public.metrics_daily where key = 'purge:originals'),
+    'adminLog', (select coalesce(jsonb_agg(jsonb_build_object('at', at, 'action', action, 'ip', ip) order by at desc), '[]'::jsonb)
+      from (select * from public.admin_log order by at desc limit 60) l)
+  )
+$$;
+revoke execute on function public.admin_metrics() from public, anon, authenticated;
+grant execute on function public.admin_metrics() to service_role;
+
+-- 회원 목록 — 이메일·가입 방식·가입일·마지막 로그인·조회 수·보관 중인 조회 기록 (최근 가입 500명)
+create or replace function public.admin_members()
+returns jsonb
+language sql security definer set search_path = public, auth as $$
+  select coalesce(jsonb_agg(m order by m->>'created_at' desc), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'id', u.id,
+      'email', u.email,
+      'provider', coalesce(u.raw_app_meta_data->>'provider', 'email'),
+      'created_at', u.created_at,
+      'last_sign_in_at', u.last_sign_in_at,
+      'confirmed', u.email_confirmed_at is not null,
+      'checks', (select count(*) from public.usage_hits h where h.user_id = u.id and h.bucket = 'analyze'),
+      'stored', (select count(*) from public.reports r where r.user_id = u.id and r.expires_at > now())
+    ) m
+    from auth.users u
+    order by u.created_at desc
+    limit 500
+  ) x
+$$;
+revoke execute on function public.admin_members() from public, anon, authenticated;
+grant execute on function public.admin_members() to service_role;
+
+-- 보관 기간: 하루 합계 400일, 접근 로그 1년 — 매시간 지우기에 더한다
+select cron.unschedule('datecheck-purge') where exists (select 1 from cron.job where jobname = 'datecheck-purge');
+select cron.schedule('datecheck-purge', '17 * * * *',
+  $$delete from public.reports where expires_at < now(); delete from public.usage_hits where at < now() - interval '90 days';
+    delete from public.metrics_daily where day < (now() at time zone 'Asia/Seoul')::date - 400; delete from public.admin_log where at < now() - interval '1 year'$$);
